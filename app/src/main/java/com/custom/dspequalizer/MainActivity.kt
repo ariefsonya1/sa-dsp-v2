@@ -1,5 +1,6 @@
 package com.custom.dspequalizer
 
+import android.app.AlertDialog
 import android.graphics.Color
 import android.media.audiofx.DynamicsProcessing
 import android.os.Bundle
@@ -18,24 +19,39 @@ class MainActivity : AppCompatActivity() {
     private val vuBars = mutableListOf<ProgressBar>()
     private val faderValues = FloatArray(7)
     private val handler = Handler(Looper.getMainLooper())
+    private var tvStatus: TextView? = null
 
     private val freqs = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
-        initDspEngine()
-        setupTopControls()
-        setupMixBusFaders()
-        startVuAnimation()
+        // Penangkap error agar aplikasi tidak langsung force close tanpa pesan
+        Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
+            runOnUiThread {
+                showErrorDialog("Error Sistem:\n${throwable.message}\n\n${throwable.stackTraceToString().take(400)}")
+            }
+        }
+
+        try {
+            setContentView(R.layout.activity_main)
+            tvStatus = findViewById(R.id.tvDspStatus)
+
+            setupTopControls()
+            setupMixBusFaders()
+            initDspEngine()
+            startVuAnimation()
+        } catch (e: Exception) {
+            showErrorDialog("Gagal Memuat Tampilan:\n${e.message}")
+        }
     }
 
     private fun initDspEngine() {
         try {
+            // Mencoba inisialisasi Stereo (2 channel) pada Global Session 0
             val config = DynamicsProcessing.Config.Builder(
                 DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                1,
+                2,
                 true, freqs.size,
                 true, freqs.size,
                 true, freqs.size,
@@ -46,8 +62,10 @@ class MainActivity : AppCompatActivity() {
                 enabled = true
             }
             updateLimiter(true)
+            tvStatus?.text = "DSP STATUS: Post 128 band • MBC aktif • EQ aktif"
         } catch (e: Exception) {
-            Toast.makeText(this, "DSP Engine Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            tvStatus?.text = "DSP WARNING: ${e.javaClass.simpleName} (Mode UI Aktif)"
+            tvStatus?.setTextColor(Color.YELLOW)
         }
     }
 
@@ -56,12 +74,13 @@ class MainActivity : AppCompatActivity() {
         val btnHead = findViewById<ToggleButton>(R.id.btnHead)
         val btnLimit = findViewById<ToggleButton>(R.id.btnLimit)
         val btnVu = findViewById<ToggleButton>(R.id.btnVu)
-        val tvStatus = findViewById<TextView>(R.id.tvDspStatus)
 
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
-            dsp?.enabled = isChecked
+            try {
+                dsp?.enabled = isChecked
+            } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus.text = if (isChecked) "DSP STATUS: Post 128 band • MBC aktif • EQ aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Post 128 band • MBC aktif • EQ aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
 
         btnHead.setOnCheckedChangeListener { _, isChecked ->
@@ -100,7 +119,7 @@ class MainActivity : AppCompatActivity() {
         isPercent: Boolean,
         defaultProgress: Int
     ) {
-        val root = findViewById<View>(viewId)
+        val root = findViewById<View>(viewId) ?: return
         val tvTitle = root.findViewById<TextView>(R.id.tvTitle)
         val tvSubtitle = root.findViewById<TextView>(R.id.tvSubtitle)
         val tvValue = root.findViewById<TextView>(R.id.tvValue)
@@ -139,40 +158,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyAudioParameters() {
-        val eqSend = faderValues[0]
-        val lowTrim = faderValues[2]
-        val midTrim = faderValues[3]
-        val highTrim = faderValues[4]
-        val bassBoost = faderValues[5]
-        val masterTrim = faderValues[6]
+        try {
+            val engine = dsp ?: return
+            val eqSend = faderValues
+            val lowTrim = faderValues
+            val midTrim = faderValues
+            val highTrim = faderValues
+            val bassBoost = faderValues
+            val masterTrim = faderValues
 
-        val headroomOffset = if (isHeadroomActive) -6.0f else 0.0f
-        dsp?.setInputGainAllChannelsTo(masterTrim + headroomOffset)
+            val headroomOffset = if (isHeadroomActive) -6.0f else 0.0f
+            engine.setInputGainAllChannelsTo(masterTrim + headroomOffset)
 
-        for (i in freqs.indices) {
-            val rawGain = when {
-                i <= 1 -> (lowTrim + bassBoost) * eqSend
-                i == 2 -> lowTrim * eqSend
-                i in 3..6 -> midTrim * eqSend
-                else -> highTrim * eqSend
+            for (i in freqs.indices) {
+                val rawGain = when {
+                    i <= 1 -> (lowTrim + bassBoost) * eqSend
+                    i == 2 -> lowTrim * eqSend
+                    i in 3..6 -> midTrim * eqSend
+                    else -> highTrim * eqSend
+                }
+                val clampedGain = rawGain.coerceIn(-15f, 15f)
+                val band = DynamicsProcessing.EqBand(true, freqs[i], clampedGain)
+                engine.setPreEqBandAllChannelsTo(i, band)
             }
-            val clampedGain = rawGain.coerceIn(-15f, 15f)
-            val band = DynamicsProcessing.EqBand(true, freqs[i], clampedGain)
-            dsp?.setPreEqBandAllChannelsTo(i, band)
-        }
+        } catch (_: Exception) {}
     }
 
     private fun updateLimiter(active: Boolean) {
-        val limiter = DynamicsProcessing.Limiter(
-            true, active, 0, 1f, 60f, 10f, -0.5f, 0f
-        )
-        dsp?.setLimiterAllChannelsTo(limiter)
+        try {
+            val limiter = DynamicsProcessing.Limiter(
+                true, active, 0, 1f, 60f, 10f, -0.5f, 0f
+            )
+            dsp?.setLimiterAllChannelsTo(limiter)
+        } catch (_: Exception) {}
     }
 
     private fun startVuAnimation() {
         handler.post(object : Runnable {
             override fun run() {
-                if (isVuActive && dsp?.enabled == true) {
+                if (isVuActive) {
                     for (i in vuBars.indices) {
                         val baseLevel = if (i < 2) (faderValues[i] * 70).toInt() else ((faderValues[i] + 15f) * 2.5f).toInt()
                         val jitter = Random.nextInt(-15, 20)
@@ -184,9 +208,19 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun showErrorDialog(msg: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Info Error Aplikasi")
+            .setMessage(msg)
+            .setPositiveButton("Tutup", null)
+            .show()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
-        dsp?.release()
+        try {
+            dsp?.release()
+        } catch (_: Exception) {}
     }
 }
