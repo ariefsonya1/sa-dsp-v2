@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://android.com">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#90A4AE"
+                android:centerColor="#ECEFF1"
+                android:endColor="#546E7A"
+                android:angle="90" />
+            <corners android:radius="3dp" />
+            <size android:width="22dp" android:height="42dp" />
+        </shape>
+    </item>
+    <item android:top="19dp" android:bottom="19dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#00E5FF" />
+        </shape>
+    </item>
+</layer-list>
