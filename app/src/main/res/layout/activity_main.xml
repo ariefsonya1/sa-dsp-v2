@@ -6,7 +6,6 @@
     android:background="#0B0E11"
     android:padding="6dp">
 
-    <!-- HEADER KONSOL -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="34dp"
@@ -60,7 +59,6 @@
             android:background="@drawable/bg_pill_btn" />
     </LinearLayout>
 
-    <!-- BARIS 9 TAB NAVIGASI -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="32dp"
@@ -83,118 +81,74 @@
         </LinearLayout>
     </HorizontalScrollView>
 
-    <!-- KONTAINER HALAMAN DINAMIS -->
-    <FrameLayout
+    <LinearLayout
+        android:id="@+id/barMixControls"
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="4dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="MIX BUS • VU frekuensi LOW / MID / HIGH / BASS • MASTER keluaran langsung"
+            android:textColor="#90A4AE"
+            android:textSize="9sp" />
+
+        <ToggleButton
+            android:id="@+id/btnHead"
+            android:layout_width="68dp"
+            android:layout_height="24dp"
+            android:textOn="● HEAD"
+            android:textOff="○ HEAD"
+            android:checked="false"
+            android:textColor="#FF5252"
+            android:textSize="9sp"
+            android:background="@drawable/bg_pill_btn"
+            android:layout_marginEnd="4dp"/>
+
+        <ToggleButton
+            android:id="@+id/btnLimit"
+            android:layout_width="68dp"
+            android:layout_height="24dp"
+            android:textOn="● LIMIT"
+            android:textOff="○ LIMIT"
+            android:checked="true"
+            android:textColor="#00E676"
+            android:textSize="9sp"
+            android:background="@drawable/bg_pill_btn"
+            android:layout_marginEnd="4dp"/>
+
+        <ToggleButton
+            android:id="@+id/btnVu"
+            android:layout_width="60dp"
+            android:layout_height="24dp"
+            android:textOn="● VU"
+            android:textOff="○ VU"
+            android:checked="true"
+            android:textColor="#00E676"
+            android:textSize="9sp"
+            android:background="@drawable/bg_pill_btn" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/containerFadersMix"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:orientation="horizontal"
         android:layout_marginTop="2dp">
 
-        <!-- HALAMAN 1: MIX BUS -->
-        <LinearLayout
-            android:id="@+id/pageMix"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:visibility="visible">
+        <include android:id="@+id/chGraphicEq" layout="@layout/item_fader_channel" />
+        <include android:id="@+id/chParametric" layout="@layout/item_fader_channel" />
+        <include android:id="@+id/chLow" layout="@layout/item_fader_channel" />
+        <include android:id="@+id/chMid" layout="@layout/item_fader_channel" />
+        <include android:id="@+id/chHigh" layout="@layout/item_fader_channel" />
+        <include android:id="@+id/chBassBoost" layout="@layout/item_fader_channel" />
+        <include android:id="@+id/chMaster" layout="@layout/item_fader_channel" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="28dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="4dp">
+    </LinearLayout>
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="MIX BUS • VU frekuensi LOW / MID / HIGH / BASS • MASTER keluaran langsung"
-                    android:textColor="#90A4AE"
-                    android:textSize="9sp" />
-
-                <ToggleButton
-                    android:id="@+id/btnHead"
-                    android:layout_width="68dp"
-                    android:layout_height="24dp"
-                    android:textOn="● HEAD"
-                    android:textOff="○ HEAD"
-                    android:checked="false"
-                    android:textColor="#FF5252"
-                    android:textSize="9sp"
-                    android:background="@drawable/bg_pill_btn"
-                    android:layout_marginEnd="4dp"/>
-
-                <ToggleButton
-                    android:id="@+id/btnLimit"
-                    android:layout_width="68dp"
-                    android:layout_height="24dp"
-                    android:textOn="● LIMIT"
-                    android:textOff="○ LIMIT"
-                    android:checked="true"
-                    android:textColor="#00E676"
-                    android:textSize="9sp"
-                    android:background="@drawable/bg_pill_btn"
-                    android:layout_marginEnd="4dp"/>
-
-                <ToggleButton
-                    android:id="@+id/btnVu"
-                    android:layout_width="60dp"
-                    android:layout_height="24dp"
-                    android:textOn="● VU"
-                    android:textOff="○ VU"
-                    android:checked="true"
-                    android:textColor="#00E676"
-                    android:textSize="9sp"
-                    android:background="@drawable/bg_pill_btn" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:orientation="horizontal">
-
-                <include android:id="@+id/chGraphicEq" layout="@layout/item_fader_channel" />
-                <include android:id="@+id/chParametric" layout="@layout/item_fader_channel" />
-                <include android:id="@+id/chLow" layout="@layout/item_fader_channel" />
-                <include android:id="@+id/chMid" layout="@layout/item_fader_channel" />
-                <include android:id="@+id/chHigh" layout="@layout/item_fader_channel" />
-                <include android:id="@+id/chBassBoost" layout="@layout/item_fader_channel" />
-                <include android:id="@+id/chMaster" layout="@layout/item_fader_channel" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- HALAMAN 2: EQ30 (30-BAND GRAPHIC EQ) -->
-        <LinearLayout
-            android:id="@+id/pageEq30"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:background="#12161B"
-            android:padding="6dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="28dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="30-BAND GRAPHIC EQUALIZER (20 Hz – 16 kHz) • Geser ke samping untuk semua pita"
-                    android:textColor="#00E5FF"
-                    android:textSize="10sp"
-                    android:textStyle="bold" />
-                <Button
-                    android:id="@+id/btnResetEq30"
-                    android:layout_width="96dp"
-                    android:layout_height="26dp"
-                    android:text="RESET FLAT"
-                    android:textSize="9sp"
-                    android:textColor="#FF5252"
-                    android:background="@drawable/bg_pill_btn" />
-            </LinearLayout>
-
+</LinearLayout>
