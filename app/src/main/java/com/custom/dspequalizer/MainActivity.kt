@@ -114,18 +114,24 @@ class MainActivity : AppCompatActivity() {
 
         for (i in eq30Freqs.indices) {
             val col = LinearLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(110, LinearLayout.LayoutParams.MATCH_PARENT).apply { setMargins(4, 4, 4, 4) }
+                layoutParams = LinearLayout.LayoutParams(95, LinearLayout.LayoutParams.MATCH_PARENT).apply { setMargins(3, 4, 3, 4) }
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setBackgroundResource(R.drawable.bg_fader_card)
-                setPadding(4, 6, 4, 6)
+                setPadding(2, 6, 2, 6)
             }
-            val tvFreq = TextView(this).apply { text = eq30Labels.get(i); setTextColor(Color.parseColor("#00E5FF")); textSize = 10f; gravity = Gravity.CENTER }
+            val tvFreq = TextView(this).apply { text = eq30Labels.get(i); setTextColor(Color.parseColor("#00E5FF")); textSize = 9f; gravity = Gravity.CENTER }
             val tvDb = TextView(this).apply { text = "0.0"; setTextColor(Color.WHITE); textSize = 9f; gravity = Gravity.CENTER }
-            val frame = FrameLayout(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f) }
+            val frame = FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                clipChildren = false
+            }
             val sb = SeekBar(this).apply {
-                layoutParams = FrameLayout.LayoutParams(220, 60, Gravity.CENTER)
+                // Lebar 380 menjadi tinggi rel vertikal setelah diputar 270 derajat
+                layoutParams = FrameLayout.LayoutParams(380, 48, Gravity.CENTER)
                 rotation = 270f; max = 300; progress = 150
+                scaleX = 0.85f
+                scaleY = 0.65f
                 setProgressDrawable(getDrawable(R.drawable.bg_fader_track))
                 thumb = getDrawable(R.drawable.bg_fader_thumb)
                 splitTrack = false
@@ -220,17 +226,19 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "OTHER", "SIGNAL ROUTING & MONITOR") }
         findViewById<Button>(R.id.tabCon).setOnClickListener { switchPage(it as Button, "OTHER", "CONSOLE CONFIGURATION") }
     }
-    private fun initDspEngine() {
+        private fun initDspEngine() {
         try {
+            // Driver Xiaomi/POCO mewajibkan channelCount = 1 pada session 0
             val config = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
+                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 1,
                 true, preFreqs.size, true, preFreqs.size, true, eq30Freqs.size, true
             ).build()
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
             tvStatus?.text = "DSP STATUS: Post 30-Band • MBC aktif • EQ aktif"
+            tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
-            tvStatus?.text = "DSP WARNING: ${e.javaClass.simpleName} (Mode UI Aktif)"
+            tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
             tvStatus?.setTextColor(Color.YELLOW)
         }
     }
