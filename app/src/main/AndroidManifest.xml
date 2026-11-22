@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://android.com">
+<manifest xmlns:android="http://android.com"
+    xmlns:tools="http://android.com">
 
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <application
         android:allowBackup="true"
         android:label="TaGunner Style DSP"
-        android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar"
+        tools:targetApi="31">
         <activity
             android:name=".MainActivity"
             android:screenOrientation="sensorLandscape"
@@ -17,4 +20,5 @@
             </intent-filter>
         </activity>
     </application>
+
 </manifest>
