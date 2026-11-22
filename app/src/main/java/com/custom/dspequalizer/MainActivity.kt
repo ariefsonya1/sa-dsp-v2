@@ -6,7 +6,9 @@ import android.media.audiofx.DynamicsProcessing
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import kotlin.random.Random
@@ -16,51 +18,217 @@ class MainActivity : AppCompatActivity() {
     private var dsp: DynamicsProcessing? = null
     private var isVuActive = true
     private var isHeadroomActive = false
+    private var isLimiterActive = true
+    private var limiterThresholdDb = -0.5f
+    private var limiterReleaseMs = 60.0f
+
     private val vuBars = mutableListOf<ProgressBar>()
     private val faderValues = FloatArray(7)
+    private val eq30SeekBars = mutableListOf<SeekBar>()
     private val handler = Handler(Looper.getMainLooper())
     private var tvStatus: TextView? = null
 
-    private val freqs = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
+    private lateinit var pageMixBar: View
+    private lateinit var pageMixFaders: View
+    private lateinit var pageEq30: LinearLayout
+    private lateinit var pageDyn: LinearLayout
+    private lateinit var pagePlaceholder: LinearLayout
+    private lateinit var tvPlaceholderTitle: TextView
+
+    private val preFreqs = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
+    private val eq30Freqs = floatArrayOf(
+        20f, 25f, 31.5f, 40f, 50f, 63f, 80f, 100f, 125f, 160f,
+        200f, 250f, 315f, 400f, 500f, 630f, 800f, 1000f, 1250f, 1600f,
+        2000f, 2500f, 3150f, 4000f, 5000f, 6300f, 8000f, 10000f, 12500f, 16000f
+    )
+    private val eq30Labels = arrayOf(
+        "20", "25", "31", "40", "50", "63", "80", "100", "125", "160",
+        "200", "250", "315", "400", "500", "630", "800", "1k", "1.2k", "1.6k",
+        "2k", "2.5k", "3.1k", "4k", "5k", "6.3k", "8k", "10k", "12.5k", "16k"
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
-            runOnUiThread {
-                showErrorDialog("Error Sistem:\n${throwable.message}\n\n${throwable.stackTraceToString().take(400)}")
-            }
+        Thread.setDefaultUncaughtExceptionHandler { _, t ->
+            runOnUiThread { showErrorDialog("Error:\n${t.message}") }
         }
-
         try {
             setContentView(R.layout.activity_main)
             tvStatus = findViewById(R.id.tvDspStatus)
+            val chEq = findViewById<View>(R.id.chGraphicEq)
+            pageMixFaders = chEq.parent as View
+            val rootLayout = pageMixFaders.parent as ViewGroup
+            pageMixBar = rootLayout.getChildAt(2)
 
+            buildDynamicPages(rootLayout)
+            setupNavigationTabs()
             setupTopControls()
             setupMixBusFaders()
             initDspEngine()
             startVuAnimation()
         } catch (e: Exception) {
-            showErrorDialog("Gagal Memuat Tampilan:\n${e.message}")
+            showErrorDialog("Gagal:\n${e.message}")
         }
     }
+    private fun buildDynamicPages(rootLayout: ViewGroup) {
+        val fullParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ).apply { setMargins(0, 6, 0, 0) }
 
+        pageEq30 = LinearLayout(this).apply {
+            layoutParams = fullParams
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#12161B"))
+            setPadding(12, 8, 12, 8)
+            visibility = View.GONE
+        }
+
+        val eqTopBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val tvEqInfo = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            text = "30-BAND GRAPHIC EQ (20 Hz – 16 kHz)"
+            setTextColor(Color.parseColor("#00E5FF"))
+            textSize = 11f
+        }
+        val btnReset = Button(this).apply {
+            text = "RESET FLAT"
+            textSize = 10f
+            setTextColor(Color.parseColor("#FF5252"))
+            setBackgroundResource(R.drawable.bg_pill_btn)
+            setOnClickListener {
+                eq30SeekBars.forEach { it.progress = 150 }
+                Toast.makeText(this@MainActivity, "EQ 30-Band Reset Flat", Toast.LENGTH_SHORT).show()
+            }
+        }
+        eqTopBar.addView(tvEqInfo)
+        eqTopBar.addView(btnReset)
+        pageEq30.addView(eqTopBar)
+
+        val hScroll = HorizontalScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        val slidersRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+
+        for (i in eq30Freqs.indices) {
+            val col = LinearLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(110, LinearLayout.LayoutParams.MATCH_PARENT).apply { setMargins(4, 4, 4, 4) }
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setBackgroundResource(R.drawable.bg_fader_card)
+                setPadding(4, 6, 4, 6)
+            }
+            val tvFreq = TextView(this).apply { text = eq30Labels.get(i); setTextColor(Color.parseColor("#00E5FF")); textSize = 10f; gravity = Gravity.CENTER }
+            val tvDb = TextView(this).apply { text = "0.0"; setTextColor(Color.WHITE); textSize = 9f; gravity = Gravity.CENTER }
+            val frame = FrameLayout(this).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f) }
+            val sb = SeekBar(this).apply {
+                layoutParams = FrameLayout.LayoutParams(220, 60, Gravity.CENTER)
+                rotation = 270f; max = 300; progress = 150
+                setProgressDrawable(getDrawable(R.drawable.bg_fader_track))
+                thumb = getDrawable(R.drawable.bg_fader_thumb)
+                splitTrack = false
+            }
+            sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                    val db = (p - 150) / 10.0f
+                    tvDb.text = String.format("%+.1f", db)
+                    try { dsp?.setPostEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, eq30Freqs.get(i), db)) } catch (_: Exception) {}
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {}
+            })
+            eq30SeekBars.add(sb)
+            frame.addView(sb); col.addView(tvFreq); col.addView(frame); col.addView(tvDb)
+            slidersRow.addView(col)
+        }
+        hScroll.addView(slidersRow)
+        pageEq30.addView(hScroll)
+        rootLayout.addView(pageEq30)
+        pageDyn = LinearLayout(this).apply {
+            layoutParams = fullParams
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#12161B"))
+            setPadding(24, 16, 24, 16)
+            visibility = View.GONE
+        }
+        val tvDynTitle = TextView(this).apply { text = "DYNAMICS PROCESSOR & MASTER LIMITER"; setTextColor(Color.parseColor("#00E676")); textSize = 14f }
+        val tvThresh = TextView(this).apply { text = "Limiter Threshold: -0.5 dB"; setTextColor(Color.WHITE); textSize = 12f; setPadding(0, 16, 0, 4) }
+        val sbThresh = SeekBar(this).apply { max = 120; progress = 115 }
+        sbThresh.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                limiterThresholdDb = (p - 120) / 10.0f
+                tvThresh.text = String.format("Limiter Threshold: %.1f dB", limiterThresholdDb)
+                updateLimiter()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+
+        val tvRel = TextView(this).apply { text = "Limiter Release Time: 60 ms"; setTextColor(Color.WHITE); textSize = 12f; setPadding(0, 16, 0, 4) }
+        val sbRel = SeekBar(this).apply { max = 290; progress = 50 }
+        sbRel.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
+                limiterReleaseMs = (p + 10).toFloat()
+                tvRel.text = String.format("Limiter Release Time: %.0f ms", limiterReleaseMs)
+                updateLimiter()
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+
+        pageDyn.addView(tvDynTitle); pageDyn.addView(tvThresh); pageDyn.addView(sbThresh); pageDyn.addView(tvRel); pageDyn.addView(sbRel)
+        rootLayout.addView(pageDyn)
+
+        pagePlaceholder = LinearLayout(this).apply {
+            layoutParams = fullParams
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.parseColor("#12161B"))
+            visibility = View.GONE
+        }
+        tvPlaceholderTitle = TextView(this).apply { setTextColor(Color.parseColor("#00E5FF")); textSize = 16f }
+        val tvSub = TextView(this).apply { text = "Modul ini aktif di sistem dan siap dikustomisasi."; setTextColor(Color.parseColor("#90A4AE")); textSize = 12f }
+        pagePlaceholder.addView(tvPlaceholderTitle); pagePlaceholder.addView(tvSub)
+        rootLayout.addView(pagePlaceholder)
+    }
+
+    private fun setupNavigationTabs() {
+        val tabs = listOf(
+            findViewById<Button>(R.id.tabMix), findViewById<Button>(R.id.tabEq30), findViewById<Button>(R.id.tabParam),
+            findViewById<Button>(R.id.tabFx), findViewById<Button>(R.id.tabDyn), findViewById<Button>(R.id.tabSpace),
+            findViewById<Button>(R.id.tabSaved), findViewById<Button>(R.id.tabSignal), findViewById<Button>(R.id.tabCon)
+        )
+        fun switchPage(btn: Button, mode: String, title: String = "") {
+            tabs.forEach { it.setTextColor(Color.parseColor("#B0BEC5")) }
+            btn.setTextColor(Color.parseColor("#FF5252"))
+            pageMixBar.visibility = if (mode == "MIX") View.VISIBLE else View.GONE
+            pageMixFaders.visibility = if (mode == "MIX") View.VISIBLE else View.GONE
+            pageEq30.visibility = if (mode == "EQ30") View.VISIBLE else View.GONE
+            pageDyn.visibility = if (mode == "DYN") View.VISIBLE else View.GONE
+            pagePlaceholder.visibility = if (mode == "OTHER") View.VISIBLE else View.GONE
+            if (title.isNotEmpty()) tvPlaceholderTitle.text = title
+        }
+        findViewById<Button>(R.id.tabMix).setOnClickListener { switchPage(it as Button, "MIX") }
+        findViewById<Button>(R.id.tabEq30).setOnClickListener { switchPage(it as Button, "EQ30") }
+        findViewById<Button>(R.id.tabDyn).setOnClickListener { switchPage(it as Button, "DYN") }
+        findViewById<Button>(R.id.tabParam).setOnClickListener { switchPage(it as Button, "OTHER", "PARAMETRIC EQ (PEQ)") }
+        findViewById<Button>(R.id.tabFx).setOnClickListener { switchPage(it as Button, "OTHER", "FX RACK (SUB-BASS & DRIVE)") }
+        findViewById<Button>(R.id.tabSpace).setOnClickListener { switchPage(it as Button, "OTHER", "SPACE & STEREO WIDENER") }
+        findViewById<Button>(R.id.tabSaved).setOnClickListener { switchPage(it as Button, "OTHER", "SAVED PRESET MANAGER") }
+        findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "OTHER", "SIGNAL ROUTING & MONITOR") }
+        findViewById<Button>(R.id.tabCon).setOnClickListener { switchPage(it as Button, "OTHER", "CONSOLE CONFIGURATION") }
+    }
     private fun initDspEngine() {
         try {
             val config = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                2,
-                true, freqs.size,
-                true, freqs.size,
-                true, freqs.size,
-                true
+                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
+                true, preFreqs.size, true, preFreqs.size, true, eq30Freqs.size, true
             ).build()
-
-            dsp = DynamicsProcessing(0, 0, config).apply {
-                enabled = true
-            }
-            updateLimiter(true)
-            tvStatus?.text = "DSP STATUS: Post 128 band • MBC aktif • EQ aktif"
+            dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
+            updateLimiter()
+            tvStatus?.text = "DSP STATUS: Post 30-Band • MBC aktif • EQ aktif"
         } catch (e: Exception) {
             tvStatus?.text = "DSP WARNING: ${e.javaClass.simpleName} (Mode UI Aktif)"
             tvStatus?.setTextColor(Color.YELLOW)
@@ -74,24 +242,20 @@ class MainActivity : AppCompatActivity() {
         val btnVu = findViewById<ToggleButton>(R.id.btnVu)
 
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
-            try {
-                dsp?.enabled = isChecked
-            } catch (_: Exception) {}
+            try { dsp?.enabled = isChecked } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus?.text = if (isChecked) "DSP STATUS: Post 128 band • MBC aktif • EQ aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Post 30-Band • MBC aktif • EQ aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
-
         btnHead.setOnCheckedChangeListener { _, isChecked ->
             isHeadroomActive = isChecked
             btnHead.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.parseColor("#FF5252"))
             applyAudioParameters()
         }
-
         btnLimit.setOnCheckedChangeListener { _, isChecked ->
+            isLimiterActive = isChecked
             btnLimit.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            updateLimiter(isChecked)
+            updateLimiter()
         }
-
         btnVu.setOnCheckedChangeListener { _, isChecked ->
             isVuActive = isChecked
             btnVu.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
@@ -100,33 +264,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupMixBusFaders() {
-        setupChannel(R.id.chGraphicEq, 0, "GRAPHIC EQ", "30 BAND SEND", isPercent = true, defaultProgress = 100)
-        setupChannel(R.id.chParametric, 1, "PARAMETRIC", "FILTER SEND", isPercent = true, defaultProgress = 100)
-        setupChannel(R.id.chLow, 2, "LOW", "TONE TRIM", isPercent = false, defaultProgress = 50)
-        setupChannel(R.id.chMid, 3, "MID", "TONE TRIM", isPercent = false, defaultProgress = 50)
-        setupChannel(R.id.chHigh, 4, "HIGH", "TONE TRIM", isPercent = false, defaultProgress = 50)
-        setupChannel(R.id.chBassBoost, 5, "BASS BOOST", "LOW EQ", isPercent = false, defaultProgress = 50)
-        setupChannel(R.id.chMaster, 6, "MASTER", "PREAMP TRIM", isPercent = false, defaultProgress = 50)
+        setupChannel(R.id.chGraphicEq, 0, "GRAPHIC EQ", "30 BAND SEND", true, 100)
+        setupChannel(R.id.chParametric, 1, "PARAMETRIC", "FILTER SEND", true, 100)
+        setupChannel(R.id.chLow, 2, "LOW", "TONE TRIM", false, 50)
+        setupChannel(R.id.chMid, 3, "MID", "TONE TRIM", false, 50)
+        setupChannel(R.id.chHigh, 4, "HIGH", "TONE TRIM", false, 50)
+        setupChannel(R.id.chBassBoost, 5, "BASS BOOST", "LOW EQ", false, 50)
+        setupChannel(R.id.chMaster, 6, "MASTER", "PREAMP TRIM", false, 50)
     }
 
-    private fun setupChannel(
-        viewId: Int,
-        index: Int,
-        title: String,
-        subtitle: String,
-        isPercent: Boolean,
-        defaultProgress: Int
-    ) {
+    private fun setupChannel(viewId: Int, index: Int, title: String, subtitle: String, isPercent: Boolean, defaultProgress: Int) {
         val root = findViewById<View>(viewId) ?: return
-        val tvTitle = root.findViewById<TextView>(R.id.tvTitle)
-        val tvSubtitle = root.findViewById<TextView>(R.id.tvSubtitle)
+        root.findViewById<TextView>(R.id.tvTitle).text = title
+        root.findViewById<TextView>(R.id.tvSubtitle).text = subtitle
         val tvValue = root.findViewById<TextView>(R.id.tvValue)
         val seekBar = root.findViewById<SeekBar>(R.id.faderSeekBar)
-        val vuBar = root.findViewById<ProgressBar>(R.id.vuMeterBar)
-
-        tvTitle.text = title
-        tvSubtitle.text = subtitle
-        vuBars.add(vuBar)
+        vuBars.add(root.findViewById(R.id.vuMeterBar))
 
         seekBar.max = if (isPercent) 100 else 300
         seekBar.progress = if (isPercent) defaultProgress else 150
@@ -138,18 +291,13 @@ class MainActivity : AppCompatActivity() {
             } else {
                 val db = (progress - 150) / 10.0f
                 faderValues.set(index, db)
-                val sign = if (db >= 0) "+" else ""
-                tvValue.text = String.format("%s%.1f dB", sign, db)
+                tvValue.text = String.format("%+.1f dB", db)
             }
         }
-
         updateLabel(seekBar.progress)
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                updateLabel(progress)
-                applyAudioParameters()
-            }
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) { updateLabel(progress); applyAudioParameters() }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
@@ -158,36 +306,25 @@ class MainActivity : AppCompatActivity() {
     private fun applyAudioParameters() {
         try {
             val engine = dsp ?: return
-            val eqSend = faderValues.get(0)
-            val lowTrim = faderValues.get(2)
-            val midTrim = faderValues.get(3)
-            val highTrim = faderValues.get(4)
-            val bassBoost = faderValues.get(5)
-            val masterTrim = faderValues.get(6)
+            val eqSend = faderValues.get(0); val lowTrim = faderValues.get(2); val midTrim = faderValues.get(3)
+            val highTrim = faderValues.get(4); val bassBoost = faderValues.get(5); val masterTrim = faderValues.get(6)
+            engine.setInputGainAllChannelsTo(masterTrim + (if (isHeadroomActive) -6.0f else 0.0f))
 
-            val headroomOffset = if (isHeadroomActive) -6.0f else 0.0f
-            engine.setInputGainAllChannelsTo(masterTrim + headroomOffset)
-
-            for (i in freqs.indices) {
+            for (i in preFreqs.indices) {
                 val rawGain = when {
                     i <= 1 -> (lowTrim + bassBoost) * eqSend
                     i == 2 -> lowTrim * eqSend
                     i in 3..6 -> midTrim * eqSend
                     else -> highTrim * eqSend
                 }
-                val clampedGain = rawGain.coerceIn(-15f, 15f)
-                val band = DynamicsProcessing.EqBand(true, freqs.get(i), clampedGain)
-                engine.setPreEqBandAllChannelsTo(i, band)
+                engine.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, preFreqs.get(i), rawGain.coerceIn(-15f, 15f)))
             }
         } catch (_: Exception) {}
     }
 
-    private fun updateLimiter(active: Boolean) {
+    private fun updateLimiter() {
         try {
-            val limiter = DynamicsProcessing.Limiter(
-                true, active, 0, 1f, 60f, 10f, -0.5f, 0f
-            )
-            dsp?.setLimiterAllChannelsTo(limiter)
+            dsp?.setLimiterAllChannelsTo(DynamicsProcessing.Limiter(true, isLimiterActive, 0, 1f, limiterReleaseMs, 10f, limiterThresholdDb, 0f))
         } catch (_: Exception) {}
     }
 
@@ -198,8 +335,7 @@ class MainActivity : AppCompatActivity() {
                     for (i in vuBars.indices) {
                         val valNow = faderValues.get(i)
                         val baseLevel = if (i < 2) (valNow * 70).toInt() else ((valNow + 15f) * 2.5f).toInt()
-                        val jitter = Random.nextInt(-15, 20)
-                        vuBars.get(i).progress = (baseLevel + jitter).coerceIn(5, 98)
+                        vuBars.get(i).progress = (baseLevel + Random.nextInt(-15, 20)).coerceIn(5, 98)
                     }
                 }
                 handler.postDelayed(this, 80)
@@ -208,18 +344,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showErrorDialog(msg: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Info Error Aplikasi")
-            .setMessage(msg)
-            .setPositiveButton("Tutup", null)
-            .show()
+        AlertDialog.Builder(this).setTitle("Info Error").setMessage(msg).setPositiveButton("Tutup", null).show()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
-        try {
-            dsp?.release()
-        } catch (_: Exception) {}
+        try { dsp?.release() } catch (_: Exception) {}
     }
 }
