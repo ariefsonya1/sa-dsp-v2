@@ -20,8 +20,9 @@ jobs:
 
       - name: Perbaiki Semua File XML Otomatis
         run: |
-          URL_ASLI="http://schemas.""://android.com"
-          find app/src/main/res -name "*.xml" -exec sed -i "s|http://android.com|$URL_ASLI|g" {} +
+          URL_ASLI=$(echo "diordna/ser/kpa/moc.diordna.samehcs//:ptth" | rev)
+          echo "Memasang namespace: $URL_ASLI"
+          find app/src/main/res -name "*.xml" -exec sed -i "s|xmlns:android=\"[^\"]*\"|xmlns:android=\"$URL_ASLI\"|g" {} +
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
