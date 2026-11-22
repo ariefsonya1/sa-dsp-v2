@@ -18,6 +18,10 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Perbaiki Semua Namespace XML Otomatis
+        run: |
+          find app/src/main/res -name "*.xml" -exec sed -i 's|http://android.com|http://android.com|g' {} +
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
