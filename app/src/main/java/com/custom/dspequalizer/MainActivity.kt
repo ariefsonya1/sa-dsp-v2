@@ -26,7 +26,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Penangkap error agar aplikasi tidak langsung force close tanpa pesan
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             runOnUiThread {
                 showErrorDialog("Error Sistem:\n${throwable.message}\n\n${throwable.stackTraceToString().take(400)}")
@@ -48,7 +47,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun initDspEngine() {
         try {
-            // Mencoba inisialisasi Stereo (2 channel) pada Global Session 0
             val config = DynamicsProcessing.Config.Builder(
                 DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
                 2,
@@ -135,11 +133,11 @@ class MainActivity : AppCompatActivity() {
 
         fun updateLabel(progress: Int) {
             if (isPercent) {
-                faderValues[index] = progress / 100f
+                faderValues.set(index, progress / 100f)
                 tvValue.text = "$progress%"
             } else {
                 val db = (progress - 150) / 10.0f
-                faderValues[index] = db
+                faderValues.set(index, db)
                 val sign = if (db >= 0) "+" else ""
                 tvValue.text = String.format("%s%.1f dB", sign, db)
             }
@@ -160,12 +158,12 @@ class MainActivity : AppCompatActivity() {
     private fun applyAudioParameters() {
         try {
             val engine = dsp ?: return
-            val eqSend = faderValues
-            val lowTrim = faderValues
-            val midTrim = faderValues
-            val highTrim = faderValues
-            val bassBoost = faderValues
-            val masterTrim = faderValues
+            val eqSend = faderValues.get(0)
+            val lowTrim = faderValues.get(2)
+            val midTrim = faderValues.get(3)
+            val highTrim = faderValues.get(4)
+            val bassBoost = faderValues.get(5)
+            val masterTrim = faderValues.get(6)
 
             val headroomOffset = if (isHeadroomActive) -6.0f else 0.0f
             engine.setInputGainAllChannelsTo(masterTrim + headroomOffset)
@@ -178,7 +176,7 @@ class MainActivity : AppCompatActivity() {
                     else -> highTrim * eqSend
                 }
                 val clampedGain = rawGain.coerceIn(-15f, 15f)
-                val band = DynamicsProcessing.EqBand(true, freqs[i], clampedGain)
+                val band = DynamicsProcessing.EqBand(true, freqs.get(i), clampedGain)
                 engine.setPreEqBandAllChannelsTo(i, band)
             }
         } catch (_: Exception) {}
@@ -198,9 +196,10 @@ class MainActivity : AppCompatActivity() {
             override fun run() {
                 if (isVuActive) {
                     for (i in vuBars.indices) {
-                        val baseLevel = if (i < 2) (faderValues[i] * 70).toInt() else ((faderValues[i] + 15f) * 2.5f).toInt()
+                        val valNow = faderValues.get(i)
+                        val baseLevel = if (i < 2) (valNow * 70).toInt() else ((valNow + 15f) * 2.5f).toInt()
                         val jitter = Random.nextInt(-15, 20)
-                        vuBars[i].progress = (baseLevel + jitter).coerceIn(5, 98)
+                        vuBars.get(i).progress = (baseLevel + jitter).coerceIn(5, 98)
                     }
                 }
                 handler.postDelayed(this, 80)
