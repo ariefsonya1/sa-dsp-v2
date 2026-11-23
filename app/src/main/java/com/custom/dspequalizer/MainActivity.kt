@@ -1,8 +1,7 @@
 package com.custom.dspequalizer
 
 import android.app.AlertDialog
-import android.content.Context
-import android.graphics.*
+import android.graphics.Color
 import android.media.audiofx.DynamicsProcessing
 import android.os.Bundle
 import android.os.Handler
@@ -12,7 +11,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import kotlin.math.*
 import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
@@ -34,22 +32,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageMixBar: View
     private lateinit var pageMixFaders: View
     private lateinit var pageEq30: LinearLayout
-    private lateinit var pageParam: LinearLayout
+    private lateinit var pageParam: ParametricEqView
     private lateinit var pageDyn: LinearLayout
     private lateinit var pagePlaceholder: LinearLayout
     private lateinit var tvPlaceholderTitle: TextView
-
-    data class PeqBand(var freq: Float, var gain: Float, var q: Float, var enabled: Boolean = true)
-    private val peqBands = arrayOf(
-        PeqBand(45f, 0f, 1.4f),
-        PeqBand(110f, 0f, 1.4f),
-        PeqBand(400f, 0f, 1.4f),
-        PeqBand(1200f, 0f, 1.4f),
-        PeqBand(3800f, 0f, 1.4f),
-        PeqBand(10000f, 0f, 1.2f)
-    )
-    private var selectedPeqIndex = 0
-    private lateinit var peqCurveView: PeqCurveView
 
     private val preFreqs = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
     private val eq30Freqs = floatArrayOf(
@@ -171,7 +157,13 @@ class MainActivity : AppCompatActivity() {
         pageEq30.addView(hScroll)
         rootLayout.addView(pageEq30)
 
-        buildParametricEqPage(rootLayout, fullParams)
+        // MEMANGGIL TAMPILAN PARAMETRIC EQ KNOB + KURVA SENTUH BARU
+        pageParam = ParametricEqView(this).apply {
+            layoutParams = fullParams
+            visibility = View.GONE
+            onEqChangedListener = { syncPostEqToDsp() }
+        }
+        rootLayout.addView(pageParam)
 
         pageDyn = LinearLayout(this).apply {
             layoutParams = fullParams
@@ -220,211 +212,13 @@ class MainActivity : AppCompatActivity() {
         pagePlaceholder.addView(tvPlaceholderTitle); pagePlaceholder.addView(tvSub)
         rootLayout.addView(pagePlaceholder)
     }
-    private fun buildParametricEqPage(rootLayout: ViewGroup, fullParams: LinearLayout.LayoutParams) {
-        pageParam = LinearLayout(this).apply {
-            layoutParams = fullParams
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#12161B"))
-            setPadding(14, 8, 14, 8)
-            visibility = View.GONE
-        }
-
-        val topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val tvTitle = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            text = "6-BAND PARAMETRIC EQ (PEQ)"
-            setTextColor(Color.parseColor("#00E5FF"))
-            textSize = 11f
-        }
-        val btnBandToggle = Button(this).apply {
-            text = "BAND: ON"
-            textSize = 9f
-            setTextColor(Color.parseColor("#00E676"))
-            setBackgroundResource(R.drawable.bg_pill_btn)
-        }
-        val btnResetPeq = Button(this).apply {
-            text = "FLAT PEQ"
-            textSize = 9f
-            setTextColor(Color.parseColor("#FF5252"))
-            setBackgroundResource(R.drawable.bg_pill_btn)
-        }
-        topBar.addView(tvTitle)
-        topBar.addView(btnBandToggle)
-        topBar.addView(btnResetPeq)
-        pageParam.addView(topBar)
-
-        peqCurveView = PeqCurveView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.15f).apply {
-                setMargins(0, 6, 0, 6)
-            }
-        }
-        pageParam.addView(peqCurveView)
-
-        val bandRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
-        val bandButtons = mutableListOf<Button>()
-
-        val controlsBox = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.35f)
-            orientation = LinearLayout.VERTICAL
-            setBackgroundResource(R.drawable.bg_fader_card)
-            setPadding(14, 8, 14, 8)
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val tvFreqVal = TextView(this).apply { setTextColor(Color.WHITE); textSize = 11f }
-        val sbFreq = SeekBar(this).apply { max = 1000 }
-        val tvGainVal = TextView(this).apply { setTextColor(Color.WHITE); textSize = 11f; setPadding(0, 6, 0, 0) }
-        val sbGain = SeekBar(this).apply { max = 300; progress = 150 }
-        val tvQVal = TextView(this).apply { setTextColor(Color.WHITE); textSize = 11f; setPadding(0, 6, 0, 0) }
-        val sbQ = SeekBar(this).apply { max = 95; progress = 9 }
-
-        var isUpdatingUi = false
-
-        fun freqToProgress(freq: Float): Int {
-            val ratio = ln((freq.coerceIn(20f, 20000f) / 20f).toDouble()) / ln(1000.0)
-            return (ratio * 1000.0).roundToInt().coerceIn(0, 1000)
-        }
-
-        fun progressToFreq(progress: Int): Float {
-            val ratio = progress / 1000.0
-            return (20.0 * 1000.0.pow(ratio)).toFloat()
-        }
-
-        fun refreshSelectedBandUi() {
-            isUpdatingUi = true
-            val b = peqBands.get(selectedPeqIndex)
-            bandButtons.forEachIndexed { idx, btn ->
-                val bandData = peqBands.get(idx)
-                val freqStr = if (bandData.freq >= 1000f) String.format("%.1fk", bandData.freq / 1000f) else String.format("%.0f", bandData.freq)
-                btn.text = "B${idx + 1}\n$freqStr"
-                btn.setTextColor(
-                    when {
-                        idx == selectedPeqIndex -> Color.parseColor("#FF5252")
-                        !bandData.enabled -> Color.GRAY
-                        else -> Color.parseColor("#00E5FF")
-                    }
-                )
-            }
-            btnBandToggle.text = if (b.enabled) "B${selectedPeqIndex + 1}: ON" else "B${selectedPeqIndex + 1}: OFF"
-            btnBandToggle.setTextColor(if (b.enabled) Color.parseColor("#00E676") else Color.GRAY)
-
-            tvFreqVal.text = String.format("Band %d Frequency: %.0f Hz", selectedPeqIndex + 1, b.freq)
-            sbFreq.progress = freqToProgress(b.freq)
-
-            tvGainVal.text = String.format("Band %d Gain: %+.1f dB", selectedPeqIndex + 1, b.gain)
-            sbGain.progress = ((b.gain * 10f) + 150f).roundToInt().coerceIn(0, 300)
-
-            tvQVal.text = String.format("Band %d Q-Factor (Lebar): %.2f", selectedPeqIndex + 1, b.q)
-            sbQ.progress = ((b.q - 0.5f) * 10f).roundToInt().coerceIn(0, 95)
-
-            peqCurveView.invalidate()
-            isUpdatingUi = false
-        }
-
-        for (i in peqBands.indices) {
-            val btn = Button(this).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins(2, 0, 2, 4)
-                }
-                textSize = 9f
-                setPadding(2, 4, 2, 4)
-                setBackgroundResource(R.drawable.bg_pill_btn)
-                setOnClickListener {
-                    selectedPeqIndex = i
-                    refreshSelectedBandUi()
-                }
-            }
-            bandButtons.add(btn)
-            bandRow.addView(btn)
-        }
-        pageParam.addView(bandRow)
-
-        sbFreq.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                if (isUpdatingUi) return
-                peqBands.get(selectedPeqIndex).freq = progressToFreq(p)
-                refreshSelectedBandUi()
-                syncPostEqToDsp()
-            }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        })
-
-        sbGain.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                if (isUpdatingUi) return
-                peqBands.get(selectedPeqIndex).gain = (p - 150) / 10.0f
-                refreshSelectedBandUi()
-                syncPostEqToDsp()
-            }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        })
-
-        sbQ.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                if (isUpdatingUi) return
-                peqBands.get(selectedPeqIndex).q = 0.5f + (p / 10.0f)
-                refreshSelectedBandUi()
-                syncPostEqToDsp()
-            }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        })
-
-        btnBandToggle.setOnClickListener {
-            val b = peqBands.get(selectedPeqIndex)
-            b.enabled = !b.enabled
-            refreshSelectedBandUi()
-            syncPostEqToDsp()
-        }
-
-        btnResetPeq.setOnClickListener {
-            val defaults = floatArrayOf(45f, 110f, 400f, 1200f, 3800f, 10000f)
-            for (i in peqBands.indices) {
-                peqBands.get(i).freq = defaults.get(i)
-                peqBands.get(i).gain = 0f
-                peqBands.get(i).q = 1.4f
-                peqBands.get(i).enabled = true
-            }
-            refreshSelectedBandUi()
-            syncPostEqToDsp()
-            Toast.makeText(this, "Parametric EQ Reset Flat", Toast.LENGTH_SHORT).show()
-        }
-
-        controlsBox.addView(tvFreqVal); controlsBox.addView(sbFreq)
-        controlsBox.addView(tvGainVal); controlsBox.addView(sbGain)
-        controlsBox.addView(tvQVal); controlsBox.addView(sbQ)
-        pageParam.addView(controlsBox)
-
-        refreshSelectedBandUi()
-        rootLayout.addView(pageParam)
-    }
-    private fun calculatePeqGainAt(freqHz: Float): Float {
-        var totalGain = 0f
-        for (band in peqBands) {
-            if (!band.enabled || abs(band.gain) < 0.05f) continue
-            val octaves = abs(ln((freqHz / band.freq).toDouble()) / ln(2.0)).toFloat()
-            val bw = 1.0f / band.q.coerceAtLeast(0.3f)
-            val response = exp(-0.5 * (octaves / (bw * 0.55)).pow(2.0)).toFloat()
-            totalGain += band.gain * response
-        }
-        return totalGain
-    }
-
     private fun syncPostEqToDsp() {
         val engine = dsp ?: return
         val paramSend = faderValues.get(1)
         for (i in eq30Freqs.indices) {
             val freq = eq30Freqs.get(i)
             val graphicDb = eq30DbValues.get(i)
-            val peqDb = calculatePeqGainAt(freq) * paramSend
+            val peqDb = pageParam.calculateTotalGainAt(freq) * paramSend
             val combinedDb = (graphicDb + peqDb).coerceIn(-15f, 15f)
             try {
                 engine.setPostEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, freq, combinedDb))
@@ -432,69 +226,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    inner class PeqCurveView(context: Context) : View(context) {
-        private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#263238"); strokeWidth = 2f; style = Paint.Style.STROKE }
-        private val zeroLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#455A64"); strokeWidth = 2.5f }
-        private val curvePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#00E5FF"); strokeWidth = 5f; style = Paint.Style.STROKE }
-        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#2200E5FF"); style = Paint.Style.FILL }
-        private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#78909C"); textSize = 22f }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            val w = width.toFloat()
-            val h = height.toFloat()
-            if (w <= 0f || h <= 0f) return
-
-            canvas.drawColor(Color.parseColor("#0D1115"))
-            val midY = h / 2f
-
-            canvas.drawLine(0f, midY, w, midY, zeroLinePaint)
-            canvas.drawLine(0f, h * 0.15f, w, h * 0.15f, gridPaint)
-            canvas.drawLine(0f, h * 0.85f, w, h * 0.85f, gridPaint)
-
-            val markerFreqs = floatArrayOf(50f, 100f, 500f, 1000f, 5000f, 10000f)
-            val markerLabels = arrayOf("50", "100", "500", "1k", "5k", "10k")
-            for (i in markerFreqs.indices) {
-                val x = (ln((markerFreqs.get(i) / 20f).toDouble()) / ln(1000.0) * w).toFloat()
-                canvas.drawLine(x, 0f, x, h, gridPaint)
-                canvas.drawText(markerLabels.get(i), x + 4f, h - 8f, textPaint)
-            }
-
-            val path = Path()
-            val fillPath = Path()
-            fillPath.moveTo(0f, midY)
-
-            val steps = 120
-            for (s in 0..steps) {
-                val ratio = s.toFloat() / steps
-                val freq = (20.0 * 1000.0.pow(ratio.toDouble())).toFloat()
-                val gainDb = calculatePeqGainAt(freq).coerceIn(-15f, 15f)
-                val x = ratio * w
-                val y = midY - (gainDb / 15f) * (h * 0.42f)
-                if (s == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                fillPath.lineTo(x, y)
-            }
-            fillPath.lineTo(w, midY)
-            fillPath.close()
-
-            canvas.drawPath(fillPath, fillPaint)
-            canvas.drawPath(path, curvePaint)
-
-            for (i in peqBands.indices) {
-                val b = peqBands.get(i)
-                val ratio = (ln((b.freq.coerceIn(20f, 20000f) / 20f).toDouble()) / ln(1000.0)).toFloat()
-                val bx = ratio * w
-                val by = midY - (b.gain.coerceIn(-15f, 15f) / 15f) * (h * 0.42f)
-                dotPaint.color = when {
-                    i == selectedPeqIndex -> Color.parseColor("#FF5252")
-                    !b.enabled -> Color.GRAY
-                    else -> Color.parseColor("#00E676")
-                }
-                canvas.drawCircle(bx, by, if (i == selectedPeqIndex) 13f else 9f, dotPaint)
-            }
-        }
-    }
     private fun setupNavigationTabs() {
         val tabs = listOf(
             findViewById<Button>(R.id.tabMix), findViewById<Button>(R.id.tabEq30), findViewById<Button>(R.id.tabParam),
@@ -531,7 +262,7 @@ class MainActivity : AppCompatActivity() {
             ).build()
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
-            tvStatus?.text = "DSP STATUS: Post 30-Band • PEQ 6-Band • MBC aktif"
+            tvStatus?.text = "DSP STATUS: Post 30-Band • PEQ 8-Node • MBC aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
             tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
@@ -548,7 +279,7 @@ class MainActivity : AppCompatActivity() {
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
             try { dsp?.enabled = isChecked } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus?.text = if (isChecked) "DSP STATUS: Post 30-Band • PEQ 6-Band • MBC aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Post 30-Band • PEQ 8-Node • MBC aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
         btnHead.setOnCheckedChangeListener { _, isChecked ->
             isHeadroomActive = isChecked
