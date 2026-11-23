@@ -382,8 +382,8 @@ class MainActivity : AppCompatActivity() {
         defaultProgress: Int
     ) {
         val container = findViewById<View>(containerId) ?: return
-        val seekBar = findViewByIdInHierarchy<SeekBar>(container)
-        val progressBar = findViewByIdInHierarchy<ProgressBar>(container, excludeSeekBar = true)
+        val seekBar = findViewByIdInHierarchy(container, SeekBar::class.java)
+        val progressBar = findViewByIdInHierarchy(container, ProgressBar::class.java, excludeSeekBar = true)
         val texts = findAllTextViews(container)
 
         if (texts.isNotEmpty()) texts.get(0).text = title
@@ -424,17 +424,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private inline fun <reified T : View> findViewByIdInHierarchy(
+    private fun <T : View> findViewByIdInHierarchy(
         root: View,
+        clazz: Class<T>,
         excludeSeekBar: Boolean = false
     ): T? {
-        if (root is T) {
+        if (clazz.isInstance(root)) {
             if (excludeSeekBar && root is SeekBar) return null
-            return root
+            return clazz.cast(root)
         }
         if (root is ViewGroup) {
             for (i in 0 until root.childCount) {
-                val found = findViewByIdInHierarchy<T>(root.getChildAt(i), excludeSeekBar)
+                val found = findViewByIdInHierarchy(root.getChildAt(i), clazz, excludeSeekBar)
                 if (found != null) return found
             }
         }
