@@ -555,8 +555,104 @@ class ConsoleConfigView @JvmOverloads constructor(
             canvas.drawText(label, cx, h - 4f, txtP)
         }
     }
-                        updateVuChannel(2, bassNorm)
-                        updateVuChannel(3, midNorm)
-                        updateVuChannel(4, highNorm)
-                        updateVuChannel(5, (bassNorm * 1.15f).coerceIn(0f, 1f))
-                        
+    inner class MiniStripView(context: Context, private val idx: Int) : View(context) {
+        private val bgP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colPanel; style = Paint.Style.FILL }
+        private val bdrNormal = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colBorder; strokeWidth = 2f; style = Paint.Style.STROKE }
+        private val bdrSel = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colAccent; strokeWidth = 3.5f; style = Paint.Style.STROKE }
+        private val selFillP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        private val trackP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#0B0F14"); strokeWidth = 6f; strokeCap = Paint.Cap.ROUND }
+        private val capP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        private val ledP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        private val txtSelP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+        private val txtOnP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 17f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+        private val txtNameP = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18.5f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+        private val txtValP = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colTextMain; textSize = 18.5f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            val h = height.toFloat()
+            if (h <= 0f) return super.onTouchEvent(event)
+            val trackTop = 96f
+            val trackBot = h - 34f
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    selectedCh = idx
+                    if (event.y < 38f) {
+                    } else if (event.y < 72f) {
+                        chEnabled.set(idx, !chEnabled.get(idx))
+                    } else if (event.y in trackTop..trackBot) {
+                        val norm = 1f - ((event.y - trackTop) / (trackBot - trackTop)).coerceIn(0f, 1f)
+                        chValues.set(idx, norm)
+                        onConsoleChannelChanged?.invoke(idx, norm)
+                    }
+                    refreshHeaderReadout()
+                    miniCurveView.invalidate()
+                    for (s in stripViews) s.invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (event.y >= 72f) {
+                        val norm = 1f - ((event.y - trackTop) / (trackBot - trackTop)).coerceIn(0f, 1f)
+                        chValues.set(idx, norm)
+                        refreshHeaderReadout()
+                        miniCurveView.invalidate()
+                        invalidate()
+                        onConsoleChannelChanged?.invoke(idx, norm)
+                    }
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            return super.onTouchEvent(event)
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat(); val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            val isSel = (idx == selectedCh)
+            val isEn = chEnabled.get(idx)
+
+            val cardR = RectF(1f, 1f, w - 1f, h - 1f)
+            canvas.drawRoundRect(cardR, 10f, 10f, bgP)
+            canvas.drawRoundRect(cardR, 10f, 10f, if (isSel) bdrSel else bdrNormal)
+
+            val selR = RectF(6f, 6f, w - 6f, 34f)
+            selFillP.color = if (isSel) colAccent else Color.parseColor("#1E293B")
+            canvas.drawRoundRect(selR, 6f, 6f, selFillP)
+            txtSelP.color = if (isSel) colBgDark else colTextDim
+            canvas.drawText("SEL", w / 2f, 26f, txtSelP)
+
+            txtOnP.color = if (isEn) colGreen else colTextDim
+            canvas.drawText(if (isEn) "ON" else "OFF", w / 2f, 54f, txtOnP)
+
+            txtNameP.color = if (idx == 8) colRed else colAccent
+            canvas.drawText(chNames.get(idx), w / 2f, 78f, txtNameP)
+
+            val trackTop = 96f
+            val trackBot = h - 34f
+            val faderX = w * 0.62f
+            val ledX = w * 0.28f
+
+            val activeDots = (chAudioLevels.get(idx) * 8).roundToInt()
+            for (d in 0 until 8) {
+                val dy = trackBot - (d / 7f) * (trackBot - trackTop)
+                ledP.color = when {
+                    d >= activeDots -> Color.parseColor("#1E293B")
+                    d >= 6 -> colRed
+                    d >= 4 -> colAmber
+                    else -> colGreen
+                }
+                canvas.drawCircle(ledX, dy, 4f, ledP)
+            }
+
+            canvas.drawLine(faderX, trackTop, faderX, trackBot, trackP)
+            val v = chValues.get(idx)
+            val thumbY = trackBot - v * (trackBot - trackTop)
+            capP.color = if (idx == 8) colRed else Color.parseColor("#CBD5E1")
+            canvas.drawRoundRect(RectF(faderX - 15f, thumbY - 9f, faderX + 15f, thumbY + 9f), 5f, 5f, capP)
+
+            canvas.drawText(formatChannelValue(idx), w / 2f, h - 8f, txtValP)
+        }
+    }
+}
