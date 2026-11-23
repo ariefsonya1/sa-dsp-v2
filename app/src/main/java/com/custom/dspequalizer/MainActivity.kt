@@ -11,6 +11,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
@@ -33,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageParam: ParametricEqView
     private lateinit var pageFx: FxRackView
     private lateinit var pageDyn: DynamicsView
+    private lateinit var pageSaved: SavedPresetView
     private lateinit var pagePlaceholder: LinearLayout
     private lateinit var tvPlaceholderTitle: TextView
 
@@ -100,6 +103,14 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(pageDyn)
 
+        pageSaved = SavedPresetView(this).apply {
+            layoutParams = fullParams
+            visibility = View.GONE
+            onSavePresetRequest = { exportCurrentStateToJson() }
+            onLoadPresetRequest = { json -> importStateFromJson(json) }
+        }
+        rootLayout.addView(pageSaved)
+
         pagePlaceholder = LinearLayout(this).apply {
             layoutParams = fullParams
             orientation = LinearLayout.VERTICAL
@@ -153,6 +164,72 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
+    private fun exportCurrentStateToJson(): JSONObject {
+        val obj = JSONObject()
+        val eqL = JSONArray()
+        val eqR = JSONArray()
+        for (i in 0 until 30) {
+            eqL.put(pageEq30.leftGains.get(i).toDouble())
+            eqR.put(pageEq30.rightGains.get(i).toDouble())
+        }
+        obj.put("eq30_L", eqL)
+        obj.put("eq30_R", eqR)
+
+        val peqArr = JSONArray()
+        for (n in pageParam.nodes) {
+            val item = JSONObject()
+            item.put("freq", n.freq.toDouble())
+            item.put("gain", n.gain.toDouble())
+            item.put("q", n.q.toDouble())
+            item.put("type", n.type.name)
+            peqArr.put(item)
+        }
+        obj.put("peq_nodes", peqArr)
+        obj.put("fx_subsonic", pageFx.subsonicHz.toDouble())
+        obj.put("fx_subBass", pageFx.subBassDb.toDouble())
+        obj.put("fx_widener", pageFx.widenerPct)
+        obj.put("fx_tubeDrive", pageFx.tubeDriveDb.toDouble())
+        return obj
+    }
+
+    private fun importStateFromJson(obj: JSONObject) {
+        val eqL = obj.optJSONArray("eq30_L")
+        val eqR = obj.optJSONArray("eq30_R")
+        if (eqL != null && eqR != null) {
+            for (i in 0 until minOf(30, eqL.length())) {
+                pageEq30.leftGains.set(i, eqL.getDouble(i).toFloat())
+                pageEq30.rightGains.set(i, eqR.getDouble(i).toFloat())
+            }
+            pageEq30.invalidate()
+        }
+        val peqArr = obj.optJSONArray("peq_nodes")
+        if (peqArr != null && peqArr.length() > 0) {
+            pageParam.nodes.clear()
+            for (i in 0 until peqArr.length()) {
+                val it = peqArr.getJSONObject(i)
+                val t = try {
+                    ParametricEqView.FilterType.valueOf(it.getString("type"))
+                } catch (_: Exception) {
+                    ParametricEqView.FilterType.BELL
+                }
+                pageParam.nodes.add(
+                    ParametricEqView.EqNode(
+                        it.getDouble("freq").toFloat(),
+                        it.getDouble("gain").toFloat(),
+                        it.getDouble("q").toFloat(),
+                        t
+                    )
+                )
+            }
+            pageParam.selectedIndex = 0
+        }
+        pageFx.subsonicHz = obj.optDouble("fx_subsonic", 0.0).toFloat()
+        pageFx.subBassDb = obj.optDouble("fx_subBass", 0.0).toFloat()
+        pageFx.widenerPct = obj.optInt("fx_widener", 0)
+        pageFx.tubeDriveDb = obj.optDouble("fx_tubeDrive", 0.0).toFloat()
+        syncPostEqToDsp()
+    }
+
     private fun setupNavigationTabs() {
         findViewById<Button>(R.id.tabSpace).visibility = View.GONE
 
@@ -182,6 +259,7 @@ class MainActivity : AppCompatActivity() {
             pageParam.visibility = if (mode == "PARAM") View.VISIBLE else View.GONE
             pageFx.visibility = if (mode == "FX") View.VISIBLE else View.GONE
             pageDyn.visibility = if (mode == "DYN") View.VISIBLE else View.GONE
+            pageSaved.visibility = if (mode == "SAVED") View.VISIBLE else View.GONE
             pagePlaceholder.visibility = if (mode == "OTHER") View.VISIBLE else View.GONE
             if (title.isNotEmpty()) tvPlaceholderTitle.text = title
         }
@@ -191,11 +269,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tabParam).setOnClickListener { switchPage(it as Button, "PARAM") }
         findViewById<Button>(R.id.tabFx).setOnClickListener { switchPage(it as Button, "FX") }
         findViewById<Button>(R.id.tabDyn).setOnClickListener { switchPage(it as Button, "DYN") }
-        findViewById<Button>(R.id.tabSaved).setOnClickListener { switchPage(it as Button, "OTHER", "SAVED PRESET MANAGER") }
+        findViewById<Button>(R.id.tabSaved).setOnClickListener { switchPage(it as Button, "SAVED") }
         findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "OTHER", "SIGNAL ROUTING & MONITOR") }
         findViewById<Button>(R.id.tabCon).setOnClickListener { switchPage(it as Button, "OTHER", "CONSOLE CONFIGURATION") }
     }
-
     private fun initDspEngine() {
         try {
             val config = DynamicsProcessing.Config.Builder(
@@ -205,7 +282,7 @@ class MainActivity : AppCompatActivity() {
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
             syncMbcToDsp()
-            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC 10-Band aktif"
+            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC • Preset aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
             tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
@@ -222,7 +299,7 @@ class MainActivity : AppCompatActivity() {
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
             try { dsp?.enabled = isChecked } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC 10-Band aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC • Preset aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
         btnHead.setOnCheckedChangeListener { _, isChecked ->
             isHeadroomActive = isChecked
@@ -240,6 +317,7 @@ class MainActivity : AppCompatActivity() {
             if (!isChecked) vuBars.forEach { it.progress = 0 }
         }
     }
+
     private fun setupMixBusFaders() {
         setupChannel(R.id.chGraphicEq, 0, "GRAPHIC EQ", "30 BAND SEND", true, 100)
         setupChannel(R.id.chParametric, 1, "PARAMETRIC", "FILTER SEND", true, 100)
