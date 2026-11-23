@@ -202,10 +202,20 @@ class MainActivity : AppCompatActivity() {
         try {
             for (i in pageDyn.bands.indices) {
                 val b = pageDyn.bands.get(i)
+                // Pastikan ratio minimal 1.0f dan parameter valid agar tidak IllegalArgumentException
+                val safeRatio = if (pageDyn.isMbcEnabled && b.enabled) b.ratio.coerceAtLeast(1.0f) else 1.0f
                 val mbcBand = DynamicsProcessing.MbcBand(
                     pageDyn.isMbcEnabled && b.enabled,
-                    b.cutoffHz, b.attackMs, b.releaseMs, b.ratio,
-                    b.threshDb, b.kneeDb, b.noiseGateDb, 1.0f, b.preGainDb, b.postGainDb
+                    b.cutoffHz,
+                    b.attackMs.coerceAtLeast(1f),
+                    b.releaseMs.coerceAtLeast(10f),
+                    safeRatio,
+                    b.threshDb,
+                    b.kneeDb.coerceAtLeast(0f),
+                    b.noiseGateDb,
+                    1.0f,
+                    0.0f, // Nolkan preGain agar tidak memicu dengung bass
+                    0.0f  // Nolkan postGain agar tidak memicu dengung bass
                 )
                 engine.setMbcBandAllChannelsTo(i, mbcBand)
             }
@@ -213,6 +223,7 @@ class MainActivity : AppCompatActivity() {
             updateLimiter()
         } catch (_: Exception) {}
     }
+
     private fun exportCurrentStateToJson(): JSONObject {
         val obj = JSONObject()
         val eqL = JSONArray()
@@ -326,26 +337,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun initDspEngine() {
         try {
-            // Gunakan VARIANT_FAVOR_TIME_RESOLUTION agar bass ketat (tight) dan bebas dengung/ringing
+            // Gunakan VARIANT_FAVOR_TIME_RESOLUTION dan tetap aktifkan slot MBC (true) agar tidak IllegalArgumentException
             val config = DynamicsProcessing.Config.Builder(
                 DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
                 1,
                 true, preFreqs.size,
-                false, preFreqs.size, // MBC dimatikan default agar tidak mengangkat noise/dengung bass
+                true, preFreqs.size,
                 true, eq30Freqs.size,
                 true
             ).build()
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
-            
-            // Otomatis potong frekuensi subsonik 20Hz & 25Hz (-12dB) agar tidak dengung
-            dsp?.setPostEqBandAllChannelsTo(0, DynamicsProcessing.EqBand(true, 20f, -12f))
-            dsp?.setPostEqBandAllChannelsTo(1, DynamicsProcessing.EqBand(true, 25f, -8f))
+            syncMbcToDsp()
+            syncPostEqToDsp()
 
             tvStatus?.text = "DSP STATUS: Clean Bass Mode • Stereo 30+30 • PEQ • FX aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
-            tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
+            tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound (${e.message})"
             tvStatus?.setTextColor(Color.YELLOW)
         }
     }
