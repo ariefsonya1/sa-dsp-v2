@@ -24,14 +24,12 @@ class MainActivity : AppCompatActivity() {
 
     private val vuBars = mutableListOf<ProgressBar>()
     private val faderValues = FloatArray(7)
-    private val eq30SeekBars = mutableListOf<SeekBar>()
-    private val eq30DbValues = FloatArray(30)
     private val handler = Handler(Looper.getMainLooper())
     private var tvStatus: TextView? = null
 
     private lateinit var pageMixBar: View
     private lateinit var pageMixFaders: View
-    private lateinit var pageEq30: LinearLayout
+    private lateinit var pageEq30: GraphicEq30View
     private lateinit var pageParam: ParametricEqView
     private lateinit var pageDyn: LinearLayout
     private lateinit var pagePlaceholder: LinearLayout
@@ -42,11 +40,6 @@ class MainActivity : AppCompatActivity() {
         20f, 25f, 31.5f, 40f, 50f, 63f, 80f, 100f, 125f, 160f,
         200f, 250f, 315f, 400f, 500f, 630f, 800f, 1000f, 1250f, 1600f,
         2000f, 2500f, 3150f, 4000f, 5000f, 6300f, 8000f, 10000f, 12500f, 16000f
-    )
-    private val eq30Labels = arrayOf(
-        "20", "25", "31", "40", "50", "63", "80", "100", "125", "160",
-        "200", "250", "315", "400", "500", "630", "800", "1k", "1.2k", "1.6k",
-        "2k", "2.5k", "3.1k", "4k", "5k", "6.3k", "8k", "10k", "12.5k", "16k"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,92 +65,19 @@ class MainActivity : AppCompatActivity() {
             showErrorDialog("Gagal:\n${e.message}")
         }
     }
+
     private fun buildDynamicPages(rootLayout: ViewGroup) {
         val fullParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ).apply { setMargins(0, 6, 0, 0) }
 
-        pageEq30 = LinearLayout(this).apply {
+        pageEq30 = GraphicEq30View(this).apply {
             layoutParams = fullParams
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#12161B"))
-            setPadding(12, 8, 12, 8)
             visibility = View.GONE
+            onEq30ChangedListener = { syncPostEqToDsp() }
         }
-
-        val eqTopBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val tvEqInfo = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            text = "30-BAND GRAPHIC EQ (20 Hz – 16 kHz)"
-            setTextColor(Color.parseColor("#00E5FF"))
-            textSize = 11f
-        }
-        val btnReset = Button(this).apply {
-            text = "RESET FLAT"
-            textSize = 10f
-            setTextColor(Color.parseColor("#FF5252"))
-            setBackgroundResource(R.drawable.bg_pill_btn)
-            setOnClickListener {
-                eq30SeekBars.forEach { it.progress = 150 }
-                eq30DbValues.fill(0f)
-                syncPostEqToDsp()
-                Toast.makeText(this@MainActivity, "EQ 30-Band Reset Flat", Toast.LENGTH_SHORT).show()
-            }
-        }
-        eqTopBar.addView(tvEqInfo)
-        eqTopBar.addView(btnReset)
-        pageEq30.addView(eqTopBar)
-
-        val hScroll = HorizontalScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        }
-        val slidersRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-
-        for (i in eq30Freqs.indices) {
-            val col = LinearLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(95, LinearLayout.LayoutParams.MATCH_PARENT).apply { setMargins(3, 4, 3, 4) }
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                setBackgroundResource(R.drawable.bg_fader_card)
-                setPadding(2, 6, 2, 6)
-            }
-            val tvFreq = TextView(this).apply { text = eq30Labels.get(i); setTextColor(Color.parseColor("#00E5FF")); textSize = 9f; gravity = Gravity.CENTER }
-            val tvDb = TextView(this).apply { text = "0.0"; setTextColor(Color.WHITE); textSize = 9f; gravity = Gravity.CENTER }
-            val frame = FrameLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-                clipChildren = false
-            }
-            val sb = SeekBar(this).apply {
-                layoutParams = FrameLayout.LayoutParams(380, 48, Gravity.CENTER)
-                rotation = 270f; max = 300; progress = 150
-                scaleX = 0.85f
-                scaleY = 0.65f
-                setProgressDrawable(getDrawable(R.drawable.bg_fader_track))
-                thumb = getDrawable(R.drawable.bg_fader_thumb)
-                splitTrack = false
-            }
-            sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
-                    val db = (p - 150) / 10.0f
-                    eq30DbValues.set(i, db)
-                    tvDb.text = String.format("%+.1f", db)
-                    syncPostEqToDsp()
-                }
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {}
-            })
-            eq30SeekBars.add(sb)
-            frame.addView(sb); col.addView(tvFreq); col.addView(frame); col.addView(tvDb)
-            slidersRow.addView(col)
-        }
-        hScroll.addView(slidersRow)
-        pageEq30.addView(hScroll)
         rootLayout.addView(pageEq30)
 
-        // MEMANGGIL TAMPILAN PARAMETRIC EQ KNOB + KURVA SENTUH BARU
         pageParam = ParametricEqView(this).apply {
             layoutParams = fullParams
             visibility = View.GONE
@@ -214,10 +134,11 @@ class MainActivity : AppCompatActivity() {
     }
     private fun syncPostEqToDsp() {
         val engine = dsp ?: return
+        val eqSend = faderValues.get(0)
         val paramSend = faderValues.get(1)
         for (i in eq30Freqs.indices) {
             val freq = eq30Freqs.get(i)
-            val graphicDb = eq30DbValues.get(i)
+            val graphicDb = pageEq30.getCombinedBandGain(i) * eqSend
             val peqDb = pageParam.calculateTotalGainAt(freq) * paramSend
             val combinedDb = (graphicDb + peqDb).coerceIn(-15f, 15f)
             try {
@@ -262,7 +183,7 @@ class MainActivity : AppCompatActivity() {
             ).build()
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
-            tvStatus?.text = "DSP STATUS: Post 30-Band • PEQ 8-Node • MBC aktif"
+            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ 8-Node • MBC aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
             tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
@@ -279,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
             try { dsp?.enabled = isChecked } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus?.text = if (isChecked) "DSP STATUS: Post 30-Band • PEQ 8-Node • MBC aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ 8-Node • MBC aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
         btnHead.setOnCheckedChangeListener { _, isChecked ->
             isHeadroomActive = isChecked
@@ -335,7 +256,7 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 updateLabel(progress)
                 applyAudioParameters()
-                if (index == 1) syncPostEqToDsp()
+                if (index == 0 || index == 1) syncPostEqToDsp()
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
