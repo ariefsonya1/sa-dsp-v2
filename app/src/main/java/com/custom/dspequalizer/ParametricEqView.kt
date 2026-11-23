@@ -70,6 +70,7 @@ class ParametricEqView @JvmOverloads constructor(
         buildBottomKnobsArea()
         refreshAllControls()
     }
+
     private fun stylePillView(v: View) {
         val gd = android.graphics.drawable.GradientDrawable().apply {
             setColor(colPanel)
@@ -246,7 +247,7 @@ class ParametricEqView @JvmOverloads constructor(
         knobGain = RotaryKnobView(context, colSecondary).apply {
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
             onValueChanged = { norm ->
-                val g = (norm - 0.5f) * 40f
+                val g = (norm - 0.5f) * 12f
                 nodes.get(selectedIndex).gain = (g * 10f).roundToInt() / 10f
                 refreshAllControls(skipKnob = 2)
                 notifyChange()
@@ -256,14 +257,12 @@ class ParametricEqView @JvmOverloads constructor(
         val gainFooter = createFineTuneRow("dB", tvGainBox,
             onMinus = {
                 val n = nodes.get(selectedIndex)
-                n.gain = ((n.gain - 0.2f) * 10f).roundToInt() / 10f
-                n.gain = n.gain.coerceIn(-20f, 20f)
+                n.gain = (((n.gain - 0.1f) * 10f).roundToInt() / 10f).coerceIn(-6f, 6f)
                 refreshAllControls(); notifyChange()
             },
             onPlus = {
                 val n = nodes.get(selectedIndex)
-                n.gain = ((n.gain + 0.2f) * 10f).roundToInt() / 10f
-                n.gain = n.gain.coerceIn(-20f, 20f)
+                n.gain = (((n.gain + 0.1f) * 10f).roundToInt() / 10f).coerceIn(-6f, 6f)
                 refreshAllControls(); notifyChange()
             }
         )
@@ -294,9 +293,7 @@ class ParametricEqView @JvmOverloads constructor(
         )
         pQ.addView(knobQ); pQ.addView(qFooter)
 
-        row.addView(pFreq)
-        row.addView(pGain)
-        row.addView(pQ)
+        row.addView(pFreq); row.addView(pGain); row.addView(pQ)
         addView(row)
     }
 
@@ -333,28 +330,17 @@ class ParametricEqView @JvmOverloads constructor(
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
             val tvUnit = TextView(context).apply {
-                text = unit
-                setTextColor(colTextDim)
-                textSize = 10f
-                setPadding(2, 0, 4, 0)
+                text = unit; setTextColor(colTextDim); textSize = 10f; setPadding(2, 0, 4, 0)
             }
             val btnM = Button(context).apply {
-                text = "-"
-                textSize = 12f
-                setTextColor(colTextMain)
-                stylePillView(this)
+                text = "-"; textSize = 12f; setTextColor(colTextMain); stylePillView(this)
                 layoutParams = LayoutParams(52, 52).apply { setMargins(2, 0, 2, 0) }
-                setPadding(0, 0, 0, 0)
-                setOnClickListener { onMinus() }
+                setPadding(0, 0, 0, 0); setOnClickListener { onMinus() }
             }
             val btnP = Button(context).apply {
-                text = "+"
-                textSize = 12f
-                setTextColor(colTextMain)
-                stylePillView(this)
+                text = "+"; textSize = 12f; setTextColor(colTextMain); stylePillView(this)
                 layoutParams = LayoutParams(52, 52).apply { setMargins(2, 0, 0, 0) }
-                setPadding(0, 0, 0, 0)
-                setOnClickListener { onPlus() }
+                setPadding(0, 0, 0, 0); setOnClickListener { onPlus() }
             }
             addView(tvUnit); addView(valueView); addView(btnM); addView(btnP)
         }
@@ -372,7 +358,7 @@ class ParametricEqView @JvmOverloads constructor(
         }
 
         val freqNorm = (ln((n.freq.coerceIn(10f, 20000f) / 10f).toDouble()) / ln(2000.0)).toFloat().coerceIn(0f, 1f)
-        val gainNorm = ((n.gain.coerceIn(-20f, 20f) / 40f) + 0.5f).coerceIn(0f, 1f)
+        val gainNorm = ((n.gain.coerceIn(-6f, 6f) / 12f) + 0.5f).toFloat().coerceIn(0f, 1f)
         val qNorm = ((n.q.coerceIn(0.2f, 10f) - 0.2f) / 9.8f).coerceIn(0f, 1f)
 
         if (skipKnob != 1) knobFreq.setNormalizedValue(freqNorm)
@@ -394,6 +380,7 @@ class ParametricEqView @JvmOverloads constructor(
     private fun notifyChange() {
         onEqChangedListener?.invoke()
     }
+
     fun calculateNodeGainAt(node: EqNode, freqHz: Float): Float {
         if (!node.enabled) return 0f
         val octaves = (ln((freqHz / node.freq).toDouble()) / ln(2.0)).toFloat()
@@ -413,11 +400,11 @@ class ParametricEqView @JvmOverloads constructor(
             }
             FilterType.HPF -> {
                 if (freqHz >= node.freq) 0f
-                else (-12f * node.q.coerceIn(0.5f, 3f) * abs(octaves)).coerceAtLeast(-24f)
+                else (-12f * node.q.coerceIn(0.5f, 3f) * abs(octaves)).coerceAtLeast(-12f)
             }
             FilterType.LPF -> {
                 if (freqHz <= node.freq) 0f
-                else (-12f * node.q.coerceIn(0.5f, 3f) * abs(octaves)).coerceAtLeast(-24f)
+                else (-12f * node.q.coerceIn(0.5f, 3f) * abs(octaves)).coerceAtLeast(-12f)
             }
         }
     }
@@ -427,7 +414,6 @@ class ParametricEqView @JvmOverloads constructor(
         for (n in nodes) sum += calculateNodeGainAt(n, freqHz)
         return sum
     }
-
     inner class EqGraphCanvas(context: Context) : View(context) {
         private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1E293B"); strokeWidth = 2f }
         private val zeroPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#334155"); strokeWidth = 2.5f }
@@ -447,14 +433,13 @@ class ParametricEqView @JvmOverloads constructor(
             (10.0 * 2000.0.pow((x / w).coerceIn(0f, 1f).toDouble())).toFloat()
 
         private fun gainToY(g: Float, h: Float): Float =
-            (h / 2f) - (g.coerceIn(-20f, 20f) / 20f) * (h * 0.42f)
+            (h / 2f) - (g.coerceIn(-6f, 6f) / 6f) * (h * 0.42f)
 
         private fun yToGain(y: Float, h: Float): Float =
-            (((h / 2f) - y) / (h * 0.42f) * 20f).coerceIn(-20f, 20f)
+            (((h / 2f) - y) / (h * 0.42f) * 6f).coerceIn(-6f, 6f)
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            val w = width.toFloat()
-            val h = height.toFloat()
+            val w = width.toFloat(); val h = height.toFloat()
             if (w <= 0f || h <= 0f) return false
 
             when (event.action) {
@@ -465,10 +450,7 @@ class ParametricEqView @JvmOverloads constructor(
                         val nx = freqToX(nodes.get(i).freq, w)
                         val ny = gainToY(nodes.get(i).gain, h)
                         val d = hypot(event.x - nx, event.y - ny)
-                        if (d < minDist) {
-                            minDist = d
-                            closestIdx = i
-                        }
+                        if (d < minDist) { minDist = d; closestIdx = i }
                     }
                     if (closestIdx != -1) {
                         selectedIndex = closestIdx
@@ -500,12 +482,11 @@ class ParametricEqView @JvmOverloads constructor(
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            val w = width.toFloat()
-            val h = height.toFloat()
+            val w = width.toFloat(); val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
 
             val midY = h / 2f
-            val dbLevels = floatArrayOf(20f, 10f, 0f, -10f, -20f)
+            val dbLevels = floatArrayOf(6f, 3f, 0f, -3f, -6f)
             for (db in dbLevels) {
                 val y = gainToY(db, h)
                 canvas.drawLine(0f, y, w, y, if (db == 0f) zeroPaint else gridPaint)
@@ -534,13 +515,8 @@ class ParametricEqView @JvmOverloads constructor(
                 val selY = gainToY(calculateNodeGainAt(nodes.get(selectedIndex), f), h)
                 val totY = gainToY(calculateTotalGainAt(f), h)
 
-                if (s == 0) {
-                    selPath.moveTo(x, selY)
-                    totalPath.moveTo(x, totY)
-                } else {
-                    selPath.lineTo(x, selY)
-                    totalPath.lineTo(x, totY)
-                }
+                if (s == 0) { selPath.moveTo(x, selY); totalPath.moveTo(x, totY) }
+                else { selPath.lineTo(x, selY); totalPath.lineTo(x, totY) }
                 fillPath.lineTo(x, totY)
             }
             fillPath.lineTo(w, midY)
@@ -562,26 +538,17 @@ class ParametricEqView @JvmOverloads constructor(
             }
         }
     }
+
     inner class RotaryKnobView(context: Context, private val accentColor: Int) : View(context) {
         private var normValue = 0.5f
         var subLabel = ""
         var onValueChanged: ((Float) -> Unit)? = null
 
-        private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#26323D"); strokeWidth = 8f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND
-        }
-        private val activeArcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = accentColor; strokeWidth = 8f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND
-        }
-        private val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1E2630"); style = Paint.Style.FILL
-        }
-        private val indicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE; strokeWidth = 5f; strokeCap = Paint.Cap.ROUND
-        }
-        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = colTextDim; textSize = 20f; textAlign = Paint.Align.CENTER
-        }
+        private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#26323D"); strokeWidth = 8f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        private val activeArcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accentColor; strokeWidth = 8f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        private val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1E2630"); style = Paint.Style.FILL }
+        private val indicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; strokeWidth = 5f; strokeCap = Paint.Cap.ROUND }
+        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colTextDim; textSize = 20f; textAlign = Paint.Align.CENTER }
 
         private var lastTouchY = 0f
 
@@ -592,34 +559,23 @@ class ParametricEqView @JvmOverloads constructor(
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    lastTouchY = event.y
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    return true
-                }
+                MotionEvent.ACTION_DOWN -> { lastTouchY = event.y; parent?.requestDisallowInterceptTouchEvent(true); return true }
                 MotionEvent.ACTION_MOVE -> {
-                    val dy = lastTouchY - event.y
-                    lastTouchY = event.y
+                    val dy = lastTouchY - event.y; lastTouchY = event.y
                     normValue = (normValue + dy / 260f).coerceIn(0f, 1f)
-                    invalidate()
-                    onValueChanged?.invoke(normValue)
-                    return true
+                    invalidate(); onValueChanged?.invoke(normValue); return true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
             }
             return super.onTouchEvent(event)
         }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            val w = width.toFloat()
-            val h = height.toFloat()
+            val w = width.toFloat(); val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
 
-            val cx = w / 2f
-            val cy = (h - 22f) / 2f
+            val cx = w / 2f; val cy = (h - 22f) / 2f
             val radius = (min(w, h - 24f) / 2f) - 10f
             if (radius <= 10f) return
 
