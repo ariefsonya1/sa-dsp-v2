@@ -32,7 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageEq30: GraphicEq30View
     private lateinit var pageParam: ParametricEqView
     private lateinit var pageFx: FxRackView
-    private lateinit var pageDyn: LinearLayout
+    private lateinit var pageDyn: DynamicsView
     private lateinit var pagePlaceholder: LinearLayout
     private lateinit var tvPlaceholderTitle: TextView
 
@@ -93,39 +93,11 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(pageFx)
 
-        pageDyn = LinearLayout(this).apply {
+        pageDyn = DynamicsView(this).apply {
             layoutParams = fullParams
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#12161B"))
-            setPadding(24, 16, 24, 16)
             visibility = View.GONE
+            onDynamicsChangedListener = { syncMbcToDsp() }
         }
-        val tvDynTitle = TextView(this).apply { text = "DYNAMICS PROCESSOR & MASTER LIMITER"; setTextColor(Color.parseColor("#00E676")); textSize = 14f }
-        val tvThresh = TextView(this).apply { text = "Limiter Threshold: -0.5 dB"; setTextColor(Color.WHITE); textSize = 12f; setPadding(0, 16, 0, 4) }
-        val sbThresh = SeekBar(this).apply { max = 120; progress = 115 }
-        sbThresh.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
-                limiterThresholdDb = (p - 120) / 10.0f
-                tvThresh.text = String.format("Limiter Threshold: %.1f dB", limiterThresholdDb)
-                updateLimiter()
-            }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        })
-
-        val tvRel = TextView(this).apply { text = "Limiter Release Time: 60 ms"; setTextColor(Color.WHITE); textSize = 12f; setPadding(0, 16, 0, 4) }
-        val sbRel = SeekBar(this).apply { max = 290; progress = 50 }
-        sbRel.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
-                limiterReleaseMs = (p + 10).toFloat()
-                tvRel.text = String.format("Limiter Release Time: %.0f ms", limiterReleaseMs)
-                updateLimiter()
-            }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        })
-
-        pageDyn.addView(tvDynTitle); pageDyn.addView(tvThresh); pageDyn.addView(sbThresh); pageDyn.addView(tvRel); pageDyn.addView(sbRel)
         rootLayout.addView(pageDyn)
 
         pagePlaceholder = LinearLayout(this).apply {
@@ -156,10 +128,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun syncMbcToDsp() {
+        val engine = dsp ?: return
+        try {
+            for (i in pageDyn.bands.indices) {
+                val b = pageDyn.bands.get(i)
+                val mbcBand = DynamicsProcessing.MbcBand(
+                    pageDyn.isMbcEnabled && b.enabled,
+                    b.cutoffHz,
+                    b.attackMs,
+                    b.releaseMs,
+                    b.ratio,
+                    b.threshDb,
+                    b.kneeDb,
+                    b.noiseGateDb,
+                    1.0f,
+                    b.preGainDb,
+                    b.postGainDb
+                )
+                engine.setMbcBandAllChannelsTo(i, mbcBand)
+            }
+            isLimiterActive = pageDyn.isLimiterEnabled
+            updateLimiter()
+        } catch (_: Exception) {}
+    }
+
     private fun setupNavigationTabs() {
+        findViewById<Button>(R.id.tabSpace).visibility = View.GONE
+
         val tabs = listOf(
             findViewById<Button>(R.id.tabMix), findViewById<Button>(R.id.tabEq30), findViewById<Button>(R.id.tabParam),
-            findViewById<Button>(R.id.tabFx), findViewById<Button>(R.id.tabDyn), findViewById<Button>(R.id.tabSpace),
+            findViewById<Button>(R.id.tabFx), findViewById<Button>(R.id.tabDyn),
             findViewById<Button>(R.id.tabSaved), findViewById<Button>(R.id.tabSignal), findViewById<Button>(R.id.tabCon)
         )
 
@@ -192,7 +191,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tabParam).setOnClickListener { switchPage(it as Button, "PARAM") }
         findViewById<Button>(R.id.tabFx).setOnClickListener { switchPage(it as Button, "FX") }
         findViewById<Button>(R.id.tabDyn).setOnClickListener { switchPage(it as Button, "DYN") }
-        findViewById<Button>(R.id.tabSpace).setOnClickListener { switchPage(it as Button, "OTHER", "SPACE & STEREO WIDENER") }
         findViewById<Button>(R.id.tabSaved).setOnClickListener { switchPage(it as Button, "OTHER", "SAVED PRESET MANAGER") }
         findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "OTHER", "SIGNAL ROUTING & MONITOR") }
         findViewById<Button>(R.id.tabCon).setOnClickListener { switchPage(it as Button, "OTHER", "CONSOLE CONFIGURATION") }
@@ -206,7 +204,8 @@ class MainActivity : AppCompatActivity() {
             ).build()
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
-            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ 8-Node • FX aktif"
+            syncMbcToDsp()
+            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC 10-Band aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
             tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
@@ -223,7 +222,7 @@ class MainActivity : AppCompatActivity() {
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
             try { dsp?.enabled = isChecked } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ 8-Node • FX aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC 10-Band aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
         btnHead.setOnCheckedChangeListener { _, isChecked ->
             isHeadroomActive = isChecked
@@ -241,7 +240,6 @@ class MainActivity : AppCompatActivity() {
             if (!isChecked) vuBars.forEach { it.progress = 0 }
         }
     }
-
     private fun setupMixBusFaders() {
         setupChannel(R.id.chGraphicEq, 0, "GRAPHIC EQ", "30 BAND SEND", true, 100)
         setupChannel(R.id.chParametric, 1, "PARAMETRIC", "FILTER SEND", true, 100)
