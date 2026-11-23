@@ -6,7 +6,6 @@ import android.media.audiofx.DynamicsProcessing
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -36,8 +35,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageFx: FxRackView
     private lateinit var pageDyn: DynamicsView
     private lateinit var pageSaved: SavedPresetView
-    private lateinit var pagePlaceholder: LinearLayout
-    private lateinit var tvPlaceholderTitle: TextView
+    private lateinit var pageSignal: SignalRoutingView
+    private lateinit var pageCon: ConsoleConfigView
 
     private val preFreqs = floatArrayOf(32f, 64f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
     private val eq30Freqs = floatArrayOf(
@@ -111,17 +110,58 @@ class MainActivity : AppCompatActivity() {
         }
         rootLayout.addView(pageSaved)
 
-        pagePlaceholder = LinearLayout(this).apply {
+        pageSignal = SignalRoutingView(this).apply {
             layoutParams = fullParams
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#12161B"))
             visibility = View.GONE
         }
-        tvPlaceholderTitle = TextView(this).apply { setTextColor(Color.parseColor("#00E5FF")); textSize = 16f }
-        val tvSub = TextView(this).apply { text = "Modul ini aktif di sistem dan siap dikustomisasi."; setTextColor(Color.parseColor("#90A4AE")); textSize = 12f }
-        pagePlaceholder.addView(tvPlaceholderTitle); pagePlaceholder.addView(tvSub)
-        rootLayout.addView(pagePlaceholder)
+        rootLayout.addView(pageSignal)
+
+        pageCon = ConsoleConfigView(this).apply {
+            layoutParams = fullParams
+            visibility = View.GONE
+            onConsoleChannelChanged = { idx, norm ->
+                when (idx) {
+                    0 -> { faderValues.set(0, norm); syncPostEqToDsp() }
+                    1 -> { faderValues.set(1, norm); syncPostEqToDsp() }
+                    2 -> { faderValues.set(2, (norm - 0.5f) * 30f); applyAudioParameters() }
+                    3 -> { faderValues.set(3, (norm - 0.5f) * 30f); applyAudioParameters() }
+                    4 -> { faderValues.set(4, (norm - 0.5f) * 30f); applyAudioParameters() }
+                    5 -> { faderValues.set(5, (norm - 0.5f) * 30f); applyAudioParameters() }
+                    6 -> { pageEq30.leftVolDb = (norm - 0.5f) * 30f; syncPostEqToDsp() }
+                    7 -> { pageEq30.rightVolDb = (norm - 0.5f) * 30f; syncPostEqToDsp() }
+                    8 -> { faderValues.set(6, (norm - 0.5f) * 30f); applyAudioParameters() }
+                }
+            }
+            onFactoryResetAllListener = { resetAllConsoleModules() }
+        }
+        rootLayout.addView(pageCon)
+    }
+
+    private fun resetAllConsoleModules() {
+        pageEq30.leftGains.fill(0f)
+        pageEq30.rightGains.fill(0f)
+        pageEq30.leftVolDb = 0f
+        pageEq30.rightVolDb = 0f
+        pageEq30.invalidate()
+
+        pageParam.nodes.clear()
+        pageParam.nodes.addAll(listOf(
+            ParametricEqView.EqNode(45f, 0f, 1.0f),
+            ParametricEqView.EqNode(120f, 0f, 1.0f),
+            ParametricEqView.EqNode(400f, 0f, 1.0f),
+            ParametricEqView.EqNode(1200f, 0f, 1.0f),
+            ParametricEqView.EqNode(3800f, 0f, 1.0f),
+            ParametricEqView.EqNode(10000f, 0f, 1.0f)
+        ))
+        pageParam.selectedIndex = 0
+
+        pageFx.subsonicHz = 0f
+        pageFx.subBassDb = 0f
+        pageFx.widenerPct = 0
+        pageFx.tubeDriveDb = 0f
+
+        syncPostEqToDsp()
+        syncMbcToDsp()
     }
     private fun syncPostEqToDsp() {
         val engine = dsp ?: return
@@ -146,16 +186,8 @@ class MainActivity : AppCompatActivity() {
                 val b = pageDyn.bands.get(i)
                 val mbcBand = DynamicsProcessing.MbcBand(
                     pageDyn.isMbcEnabled && b.enabled,
-                    b.cutoffHz,
-                    b.attackMs,
-                    b.releaseMs,
-                    b.ratio,
-                    b.threshDb,
-                    b.kneeDb,
-                    b.noiseGateDb,
-                    1.0f,
-                    b.preGainDb,
-                    b.postGainDb
+                    b.cutoffHz, b.attackMs, b.releaseMs, b.ratio,
+                    b.threshDb, b.kneeDb, b.noiseGateDb, 1.0f, b.preGainDb, b.postGainDb
                 )
                 engine.setMbcBandAllChannelsTo(i, mbcBand)
             }
@@ -251,7 +283,7 @@ class MainActivity : AppCompatActivity() {
 
         tabs.forEachIndexed { index, button -> applyTabStyle(button, index == 0) }
 
-        fun switchPage(btn: Button, mode: String, title: String = "") {
+        fun switchPage(btn: Button, mode: String) {
             tabs.forEach { applyTabStyle(it, it == btn) }
             pageMixBar.visibility = if (mode == "MIX") View.VISIBLE else View.GONE
             pageMixFaders.visibility = if (mode == "MIX") View.VISIBLE else View.GONE
@@ -260,8 +292,9 @@ class MainActivity : AppCompatActivity() {
             pageFx.visibility = if (mode == "FX") View.VISIBLE else View.GONE
             pageDyn.visibility = if (mode == "DYN") View.VISIBLE else View.GONE
             pageSaved.visibility = if (mode == "SAVED") View.VISIBLE else View.GONE
-            pagePlaceholder.visibility = if (mode == "OTHER") View.VISIBLE else View.GONE
-            if (title.isNotEmpty()) tvPlaceholderTitle.text = title
+            pageSignal.visibility = if (mode == "SIGNAL") View.VISIBLE else View.GONE
+            pageCon.visibility = if (mode == "CON") View.VISIBLE else View.GONE
+            if (mode == "SIGNAL") pageSignal.scanAudioRoutes()
         }
 
         findViewById<Button>(R.id.tabMix).setOnClickListener { switchPage(it as Button, "MIX") }
@@ -270,8 +303,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tabFx).setOnClickListener { switchPage(it as Button, "FX") }
         findViewById<Button>(R.id.tabDyn).setOnClickListener { switchPage(it as Button, "DYN") }
         findViewById<Button>(R.id.tabSaved).setOnClickListener { switchPage(it as Button, "SAVED") }
-        findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "OTHER", "SIGNAL ROUTING & MONITOR") }
-        findViewById<Button>(R.id.tabCon).setOnClickListener { switchPage(it as Button, "OTHER", "CONSOLE CONFIGURATION") }
+        findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "SIGNAL") }
+        findViewById<Button>(R.id.tabCon).setOnClickListener { switchPage(it as Button, "CON") }
     }
     private fun initDspEngine() {
         try {
@@ -282,7 +315,7 @@ class MainActivity : AppCompatActivity() {
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
             syncMbcToDsp()
-            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC • Preset aktif"
+            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC • Console aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
             tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
@@ -299,7 +332,7 @@ class MainActivity : AppCompatActivity() {
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
             try { dsp?.enabled = isChecked } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC • Preset aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC • Console aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
         btnHead.setOnCheckedChangeListener { _, isChecked ->
             isHeadroomActive = isChecked
