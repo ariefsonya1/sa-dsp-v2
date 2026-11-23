@@ -625,7 +625,7 @@ class ConsoleConfigView @JvmOverloads constructor(
             canvas.drawLine(faderX, topT, faderX, botT, slotP)
 
             val v = chValues.get(idx)
-            val activeLeds = if (isOn) (v * 11 + Random.nextInt(-1, 2)).coerceIn(1, 11) else 0
+            val activeLeds = if (isOn) (v * 11 + Random.nextInt(-1, 2)).toInt().coerceIn(1, 11) else 0
             for (l in 0 until 11) {
                 val ly = botT - (l / 10f) * (botT - topT)
                 ledP.color = when {
