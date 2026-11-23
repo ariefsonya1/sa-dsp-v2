@@ -153,9 +153,22 @@ class MainActivity : AppCompatActivity() {
             findViewById<Button>(R.id.tabFx), findViewById<Button>(R.id.tabDyn), findViewById<Button>(R.id.tabSpace),
             findViewById<Button>(R.id.tabSaved), findViewById<Button>(R.id.tabSignal), findViewById<Button>(R.id.tabCon)
         )
+
+        fun applyTabStyle(btn: Button, isSelected: Boolean) {
+            btn.backgroundTintList = null
+            btn.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(if (isSelected) Color.parseColor("#1E293B") else Color.parseColor("#141A21"))
+                cornerRadius = 10f
+                setStroke(2, if (isSelected) Color.parseColor("#38BDF8") else Color.parseColor("#26323D"))
+            }
+            btn.setTextColor(if (isSelected) Color.parseColor("#38BDF8") else Color.parseColor("#94A3B8"))
+        }
+
+        // Terapkan warna gelap elegan ke semua tab saat pertama dibuka
+        tabs.forEachIndexed { index, button -> applyTabStyle(button, index == 0) }
+
         fun switchPage(btn: Button, mode: String, title: String = "") {
-            tabs.forEach { it.setTextColor(Color.parseColor("#B0BEC5")) }
-            btn.setTextColor(Color.parseColor("#FF5252"))
+            tabs.forEach { applyTabStyle(it, it == btn) }
             pageMixBar.visibility = if (mode == "MIX") View.VISIBLE else View.GONE
             pageMixFaders.visibility = if (mode == "MIX") View.VISIBLE else View.GONE
             pageEq30.visibility = if (mode == "EQ30") View.VISIBLE else View.GONE
@@ -164,6 +177,7 @@ class MainActivity : AppCompatActivity() {
             pagePlaceholder.visibility = if (mode == "OTHER") View.VISIBLE else View.GONE
             if (title.isNotEmpty()) tvPlaceholderTitle.text = title
         }
+
         findViewById<Button>(R.id.tabMix).setOnClickListener { switchPage(it as Button, "MIX") }
         findViewById<Button>(R.id.tabEq30).setOnClickListener { switchPage(it as Button, "EQ30") }
         findViewById<Button>(R.id.tabParam).setOnClickListener { switchPage(it as Button, "PARAM") }
