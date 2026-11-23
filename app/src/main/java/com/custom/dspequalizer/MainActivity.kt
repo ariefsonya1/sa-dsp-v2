@@ -395,10 +395,11 @@ class MainActivity : AppCompatActivity() {
             vuBars.add(progressBar)
         }
 
-        faderValues.set(index, if (isSend) defaultProgress / 100f else ((defaultProgress - 50) / 50f) * 15f)
-        if (texts.size > 2) {
-            texts.get(2).text = if (isSend) "${defaultProgress}%" else String.format("%.1f dB", faderValues.get(index))
-        }
+        // Range Tone Trim dibatasi ±9 dB (aman, tidak bikin bass berdengung/pecah)
+        faderValues.set(index, if (isSend) defaultProgress / 100f else ((defaultProgress - 50) / 50f) * 9f)
+        val initialLabel = if (isSend) "${defaultProgress}%" else String.format("%+.1f dB", faderValues.get(index))
+        if (texts.size > 2) texts.get(2).text = initialLabel
+        if (texts.size > 3) texts.last().text = initialLabel
 
         seekBar?.apply {
             max = 100
@@ -408,13 +409,17 @@ class MainActivity : AppCompatActivity() {
                     if (isSend) {
                         val norm = progress / 100f
                         faderValues.set(index, norm)
-                        if (texts.size > 2) texts.get(2).text = "${progress}%"
+                        val lbl = "${progress}%"
+                        if (texts.size > 2) texts.get(2).text = lbl
+                        if (texts.size > 3) texts.last().text = lbl
                         syncPostEqToDsp()
                         applyAudioParameters()
                     } else {
-                        val db = ((progress - 50) / 50f) * 15f
+                        val db = ((progress - 50) / 50f) * 9f
                         faderValues.set(index, db)
-                        if (texts.size > 2) texts.get(2).text = String.format("%.1f dB", db)
+                        val lbl = String.format("%+.1f dB", db)
+                        if (texts.size > 2) texts.get(2).text = lbl
+                        if (texts.size > 3) texts.last().text = lbl
                         applyAudioParameters()
                     }
                 }
@@ -456,21 +461,25 @@ class MainActivity : AppCompatActivity() {
     private fun applyAudioParameters() {
         try {
             val engine = dsp ?: return
-            val eqSend = faderValues.get(0)
             val lowTrim = faderValues.get(2)
             val midTrim = faderValues.get(3)
             val highTrim = faderValues.get(4)
             val bassBoost = faderValues.get(5)
             val masterTrim = faderValues.get(6)
-            engine.setInputGainAllChannelsTo(masterTrim + (if (isHeadroomActive) -6.0f else 0.0f))
+
+            // Tambah headroom otomatis -3dB agar bass tidak clip/berdengung saat di-boost
+            val autoHeadroom = if (bassBoost > 0f || lowTrim > 0f) -3.0f else 0.0f
+            engine.setInputGainAllChannelsTo(masterTrim + autoHeadroom + (if (isHeadroomActive) -6.0f else 0.0f))
+
             for (i in preFreqs.indices) {
                 val rawGain = when {
-                    i <= 1 -> (lowTrim + bassBoost) * eqSend
-                    i == 2 -> lowTrim * eqSend
-                    i in 3..6 -> midTrim * eqSend
-                    else -> highTrim * eqSend
+                    i == 0 -> (lowTrim * 0.4f) + (bassBoost * 0.3f) // 32Hz ditahan agar tidak dengung/rumble
+                    i == 1 -> (lowTrim * 0.85f) + bassBoost        // 64Hz bass utama yang bulat & padat
+                    i == 2 -> lowTrim * 0.7f                       // 125Hz punch bass
+                    i in 3..6 -> midTrim
+                    else -> highTrim
                 }
-                engine.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, preFreqs.get(i), rawGain.coerceIn(-15f, 15f)))
+                engine.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, preFreqs.get(i), rawGain.coerceIn(-12f, 12f)))
             }
         } catch (_: Exception) {}
     }
