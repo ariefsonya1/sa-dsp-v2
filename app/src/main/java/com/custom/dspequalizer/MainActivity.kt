@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pageMixFaders: View
     private lateinit var pageEq30: GraphicEq30View
     private lateinit var pageParam: ParametricEqView
+    private lateinit var pageFx: FxRackView
     private lateinit var pageDyn: LinearLayout
     private lateinit var pagePlaceholder: LinearLayout
     private lateinit var tvPlaceholderTitle: TextView
@@ -84,6 +85,13 @@ class MainActivity : AppCompatActivity() {
             onEqChangedListener = { syncPostEqToDsp() }
         }
         rootLayout.addView(pageParam)
+
+        pageFx = FxRackView(this).apply {
+            layoutParams = fullParams
+            visibility = View.GONE
+            onFxChangedListener = { syncPostEqToDsp() }
+        }
+        rootLayout.addView(pageFx)
 
         pageDyn = LinearLayout(this).apply {
             layoutParams = fullParams
@@ -140,7 +148,8 @@ class MainActivity : AppCompatActivity() {
             val freq = eq30Freqs.get(i)
             val graphicDb = pageEq30.getCombinedBandGain(i) * eqSend
             val peqDb = pageParam.calculateTotalGainAt(freq) * paramSend
-            val combinedDb = (graphicDb + peqDb).coerceIn(-15f, 15f)
+            val fxDb = pageFx.calculateFxBoostAt(freq)
+            val combinedDb = (graphicDb + peqDb + fxDb).coerceIn(-15f, 15f)
             try {
                 engine.setPostEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, freq, combinedDb))
             } catch (_: Exception) {}
@@ -164,7 +173,6 @@ class MainActivity : AppCompatActivity() {
             btn.setTextColor(if (isSelected) Color.parseColor("#38BDF8") else Color.parseColor("#94A3B8"))
         }
 
-        // Terapkan warna gelap elegan ke semua tab saat pertama dibuka
         tabs.forEachIndexed { index, button -> applyTabStyle(button, index == 0) }
 
         fun switchPage(btn: Button, mode: String, title: String = "") {
@@ -173,6 +181,7 @@ class MainActivity : AppCompatActivity() {
             pageMixFaders.visibility = if (mode == "MIX") View.VISIBLE else View.GONE
             pageEq30.visibility = if (mode == "EQ30") View.VISIBLE else View.GONE
             pageParam.visibility = if (mode == "PARAM") View.VISIBLE else View.GONE
+            pageFx.visibility = if (mode == "FX") View.VISIBLE else View.GONE
             pageDyn.visibility = if (mode == "DYN") View.VISIBLE else View.GONE
             pagePlaceholder.visibility = if (mode == "OTHER") View.VISIBLE else View.GONE
             if (title.isNotEmpty()) tvPlaceholderTitle.text = title
@@ -181,8 +190,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tabMix).setOnClickListener { switchPage(it as Button, "MIX") }
         findViewById<Button>(R.id.tabEq30).setOnClickListener { switchPage(it as Button, "EQ30") }
         findViewById<Button>(R.id.tabParam).setOnClickListener { switchPage(it as Button, "PARAM") }
+        findViewById<Button>(R.id.tabFx).setOnClickListener { switchPage(it as Button, "FX") }
         findViewById<Button>(R.id.tabDyn).setOnClickListener { switchPage(it as Button, "DYN") }
-        findViewById<Button>(R.id.tabFx).setOnClickListener { switchPage(it as Button, "OTHER", "FX RACK (SUB-BASS & DRIVE)") }
         findViewById<Button>(R.id.tabSpace).setOnClickListener { switchPage(it as Button, "OTHER", "SPACE & STEREO WIDENER") }
         findViewById<Button>(R.id.tabSaved).setOnClickListener { switchPage(it as Button, "OTHER", "SAVED PRESET MANAGER") }
         findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "OTHER", "SIGNAL ROUTING & MONITOR") }
@@ -197,7 +206,7 @@ class MainActivity : AppCompatActivity() {
             ).build()
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
-            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ 8-Node • MBC aktif"
+            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ 8-Node • FX aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
             tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
@@ -214,7 +223,7 @@ class MainActivity : AppCompatActivity() {
         btnDspPower.setOnCheckedChangeListener { _, isChecked ->
             try { dsp?.enabled = isChecked } catch (_: Exception) {}
             btnDspPower.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ 8-Node • MBC aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
+            tvStatus?.text = if (isChecked) "DSP STATUS: Stereo 30+30 • PEQ 8-Node • FX aktif" else "DSP STATUS: BYPASS (NONAKTIF)"
         }
         btnHead.setOnCheckedChangeListener { _, isChecked ->
             isHeadroomActive = isChecked
