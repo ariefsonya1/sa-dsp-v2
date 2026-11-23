@@ -337,9 +337,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun initDspEngine() {
         try {
-            // Gunakan VARIANT_FAVOR_TIME_RESOLUTION dan tetap aktifkan slot MBC (true) agar tidak IllegalArgumentException
+            // Gunakan VARIANT_FAVOR_FREQUENCY_RESOLUTION yang didukung penuh oleh hardware HP
             val config = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
+                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
                 1,
                 true, preFreqs.size,
                 true, preFreqs.size,
