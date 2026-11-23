@@ -91,15 +91,16 @@ class SavedPresetView @JvmOverloads constructor(
         }
 
         val btnSave = Button(context).apply {
-            text = "+ SIMPAN PRESET"
-            textSize = 10f
+            text = "+ SIMPAN"
+            textSize = 10.5f
             setTextColor(colBgDark)
             setTypeface(null, Typeface.BOLD)
+            setPadding(16, 0, 16, 0)
             background = GradientDrawable().apply {
                 setColor(colAccent)
                 cornerRadius = 10f
             }
-            layoutParams = LayoutParams(220, 62)
+            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, 62)
             setOnClickListener {
                 val name = etPresetName.text.toString().trim()
                 if (name.isEmpty()) {
@@ -114,6 +115,7 @@ class SavedPresetView @JvmOverloads constructor(
                 Toast.makeText(context, "Preset '$name' tersimpan!", Toast.LENGTH_SHORT).show()
             }
         }
+
 
         topRow.addView(titleCol); topRow.addView(etPresetName); topRow.addView(btnSave)
         addView(topRow)
