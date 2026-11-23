@@ -1,8 +1,11 @@
 package com.custom.dspequalizer
 
+import android.Manifest
 import android.app.AlertDialog
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.Visualizer
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,13 +13,18 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.random.Random
+import kotlin.math.hypot
+import kotlin.math.log10
+import kotlin.math.sqrt
 
 class MainActivity : AppCompatActivity() {
 
     private var dsp: DynamicsProcessing? = null
+    private var audioVisualizer: Visualizer? = null
     private var isVuActive = true
     private var isHeadroomActive = false
     private var isLimiterActive = true
@@ -25,6 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     private val vuBars = mutableListOf<ProgressBar>()
     private val faderValues = FloatArray(7)
+    private val smoothVuLevels = FloatArray(7)
     private val handler = Handler(Looper.getMainLooper())
     private var tvStatus: TextView? = null
 
@@ -163,6 +172,7 @@ class MainActivity : AppCompatActivity() {
         syncPostEqToDsp()
         syncMbcToDsp()
     }
+
     private fun syncPostEqToDsp() {
         val engine = dsp ?: return
         val eqSend = faderValues.get(0)
@@ -195,7 +205,6 @@ class MainActivity : AppCompatActivity() {
             updateLimiter()
         } catch (_: Exception) {}
     }
-
     private fun exportCurrentStateToJson(): JSONObject {
         val obj = JSONObject()
         val eqL = JSONArray()
@@ -306,6 +315,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.tabSignal).setOnClickListener { switchPage(it as Button, "SIGNAL") }
         findViewById<Button>(R.id.tabCon).setOnClickListener { switchPage(it as Button, "CON") }
     }
+
     private fun initDspEngine() {
         try {
             val config = DynamicsProcessing.Config.Builder(
@@ -347,7 +357,10 @@ class MainActivity : AppCompatActivity() {
         btnVu.setOnCheckedChangeListener { _, isChecked ->
             isVuActive = isChecked
             btnVu.setTextColor(if (isChecked) Color.parseColor("#00E676") else Color.GRAY)
-            if (!isChecked) vuBars.forEach { it.progress = 0 }
+            if (!isChecked) {
+                smoothVuLevels.fill(0f)
+                vuBars.forEach { it.progress = 0 }
+            }
         }
     }
 
@@ -360,39 +373,83 @@ class MainActivity : AppCompatActivity() {
         setupChannel(R.id.chBassBoost, 5, "BASS BOOST", "LOW EQ", false, 50)
         setupChannel(R.id.chMaster, 6, "MASTER", "PREAMP TRIM", false, 50)
     }
+    private fun setupChannel(
+        containerId: Int,
+        index: Int,
+        title: String,
+        subtitle: String,
+        isSend: Boolean,
+        defaultProgress: Int
+    ) {
+        val container = findViewById<View>(containerId) ?: return
+        val seekBar = findViewByIdInHierarchy<SeekBar>(container)
+        val progressBar = findViewByIdInHierarchy<ProgressBar>(container, excludeSeekBar = true)
+        val texts = findAllTextViews(container)
 
-    private fun setupChannel(viewId: Int, index: Int, title: String, subtitle: String, isPercent: Boolean, defaultProgress: Int) {
-        val root = findViewById<View>(viewId) ?: return
-        root.findViewById<TextView>(R.id.tvTitle).text = title
-        root.findViewById<TextView>(R.id.tvSubtitle).text = subtitle
-        val tvValue = root.findViewById<TextView>(R.id.tvValue)
-        val seekBar = root.findViewById<SeekBar>(R.id.faderSeekBar)
-        vuBars.add(root.findViewById(R.id.vuMeterBar))
+        if (texts.isNotEmpty()) texts.get(0).text = title
+        if (texts.size > 1) texts.get(1).text = subtitle
 
-        seekBar.max = if (isPercent) 100 else 300
-        seekBar.progress = if (isPercent) defaultProgress else 150
+        if (progressBar != null) {
+            progressBar.max = 100
+            progressBar.progress = 0
+            vuBars.add(progressBar)
+        }
 
-        fun updateLabel(progress: Int) {
-            if (isPercent) {
-                faderValues.set(index, progress / 100f)
-                tvValue.text = "$progress%"
-            } else {
-                val db = (progress - 150) / 10.0f
-                faderValues.set(index, db)
-                tvValue.text = String.format("%+.1f dB", db)
+        faderValues.set(index, if (isSend) defaultProgress / 100f else ((defaultProgress - 50) / 50f) * 15f)
+        if (texts.size > 2) {
+            texts.get(2).text = if (isSend) "${defaultProgress}%" else String.format("%.1f dB", faderValues.get(index))
+        }
+
+        seekBar?.apply {
+            max = 100
+            progress = defaultProgress
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (isSend) {
+                        val norm = progress / 100f
+                        faderValues.set(index, norm)
+                        if (texts.size > 2) texts.get(2).text = "${progress}%"
+                        syncPostEqToDsp()
+                        applyAudioParameters()
+                    } else {
+                        val db = ((progress - 50) / 50f) * 15f
+                        faderValues.set(index, db)
+                        if (texts.size > 2) texts.get(2).text = String.format("%.1f dB", db)
+                        applyAudioParameters()
+                    }
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+        }
+    }
+
+    private inline fun <reified T : View> findViewByIdInHierarchy(
+        root: View,
+        excludeSeekBar: Boolean = false
+    ): T? {
+        if (root is T) {
+            if (excludeSeekBar && root is SeekBar) return null
+            return root
+        }
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                val found = findViewByIdInHierarchy<T>(root.getChildAt(i), excludeSeekBar)
+                if (found != null) return found
             }
         }
-        updateLabel(seekBar.progress)
+        return null
+    }
 
-        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                updateLabel(progress)
-                applyAudioParameters()
-                if (index == 0 || index == 1) syncPostEqToDsp()
+    private fun findAllTextViews(root: View): List<TextView> {
+        val result = mutableListOf<TextView>()
+        if (root is TextView) result.add(root)
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                result.addAll(findAllTextViews(root.getChildAt(i)))
             }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
+        }
+        return result
     }
 
     private fun applyAudioParameters() {
@@ -424,18 +481,111 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startVuAnimation() {
-        handler.post(object : Runnable {
-            override fun run() {
-                if (isVuActive) {
-                    for (i in vuBars.indices) {
-                        val valNow = faderValues.get(i)
-                        val baseLevel = if (i < 2) (valNow * 70).toInt() else ((valNow + 15f) * 2.5f).toInt()
-                        vuBars.get(i).progress = (baseLevel + Random.nextInt(-15, 20)).coerceIn(5, 98)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 101)
+            return
+        }
+
+        try {
+            audioVisualizer?.release()
+            audioVisualizer = Visualizer(0).apply {
+                captureSize = Visualizer.getCaptureSizeRange().get(0)
+
+                setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(
+                        visualizer: Visualizer?,
+                        waveform: ByteArray?,
+                        samplingRate: Int
+                    ) {
+                        if (!isVuActive || waveform == null || vuBars.isEmpty()) return
+
+                        var sum = 0.0
+                        for (b in waveform) {
+                            val sample = ((b.toInt() and 0xFF) - 128) / 128.0
+                            sum += sample * sample
+                        }
+                        val rms = sqrt(sum / waveform.size)
+                        val db = if (rms > 0.0001) 20.0 * log10(rms) else -60.0
+                        val masterNorm = ((db + 42.0) / 38.0).toFloat().coerceIn(0f, 1f)
+
+                        updateVuChannel(0, masterNorm * (0.4f + faderValues.get(0) * 0.6f))
+                        updateVuChannel(1, masterNorm * (0.4f + faderValues.get(1) * 0.6f))
+                        val masterBoost = ((faderValues.get(6) + 15f) / 15f).coerceIn(0.3f, 1.4f)
+                        updateVuChannel(6, (masterNorm * masterBoost).coerceIn(0f, 1f))
                     }
-                }
-                handler.postDelayed(this, 80)
+
+                    override fun onFftDataCapture(
+                        visualizer: Visualizer?,
+                        fft: ByteArray?,
+                        samplingRate: Int
+                    ) {
+                        if (!isVuActive || fft == null || vuBars.size < 6) return
+
+                        val n = fft.size / 2
+                        var bassSum = 0.0
+                        var midSum = 0.0
+                        var highSum = 0.0
+
+                        for (k in 1 until n) {
+                            val re = fft.get(2 * k).toDouble()
+                            val im = fft.get(2 * k + 1).toDouble()
+                            val mag = hypot(re, im) / 128.0
+
+                            when {
+                                k <= n / 8 -> bassSum += mag
+                                k <= n / 2 -> midSum += mag
+                                else -> highSum += mag
+                            }
+                        }
+
+                        val bassNorm = toDbNorm(bassSum / (n / 8.0), 36.0)
+                        val midNorm = toDbNorm(midSum / (n * 3.0 / 8.0), 42.0)
+                        val highNorm = toDbNorm(highSum / (n / 2.0), 48.0)
+
+                        updateVuChannel(2, bassNorm)
+                        updateVuChannel(3, midNorm)
+                        updateVuChannel(4, highNorm)
+                        updateVuChannel(5, (bassNorm * 1.15f).coerceIn(0f, 1f))
+                    }
+                }, Visualizer.getMaxCaptureRate(), true, true)
+
+                enabled = true
             }
+        } catch (e: Exception) {
+            tvStatus?.text = "VU INFO: Izin audio ditolak / diblokir sistem"
+        }
+    }
+
+    private fun toDbNorm(linearMag: Double, floorDb: Double): Float {
+        val db = if (linearMag > 0.0001) 20.0 * log10(linearMag) else -60.0
+        return ((db + floorDb) / (floorDb - 2.0)).toFloat().coerceIn(0f, 1f)
+    }
+
+    private fun updateVuChannel(index: Int, targetLevel: Float) {
+        if (index !in vuBars.indices) return
+        val clamped = targetLevel.coerceIn(0f, 1f)
+        smoothVuLevels.set(index, if (clamped > smoothVuLevels.get(index)) {
+            clamped
+        } else {
+            (smoothVuLevels.get(index) * 0.78f).coerceAtLeast(clamped)
         })
+        val progressVal = (smoothVuLevels.get(index) * 100).toInt()
+        runOnUiThread {
+            if (isVuActive) vuBars.get(index).progress = progressVal
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101 && grantResults.isNotEmpty() && grantResults.get(0) == PackageManager.PERMISSION_GRANTED) {
+            startVuAnimation()
+        }
     }
 
     private fun showErrorDialog(msg: String) {
@@ -445,6 +595,10 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
+        try {
+            audioVisualizer?.enabled = false
+            audioVisualizer?.release()
+        } catch (_: Exception) {}
         try { dsp?.release() } catch (_: Exception) {}
     }
 }
