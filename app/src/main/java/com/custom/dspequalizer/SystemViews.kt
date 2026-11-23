@@ -559,6 +559,4 @@ class ConsoleConfigView @JvmOverloads constructor(
                         updateVuChannel(3, midNorm)
                         updateVuChannel(4, highNorm)
                         updateVuChannel(5, (bassNorm * 1.15f).coerceIn(0f, 1f))
-                        runOnUiThread {
-                            pageCon.updateAudioLevels(smoothVuLevels.get(0), smoothVuLevels.get(6), bassNorm, midNorm, highNorm)
-                        }
+                        
