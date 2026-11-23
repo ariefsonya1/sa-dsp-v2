@@ -182,7 +182,15 @@ class MainActivity : AppCompatActivity() {
             val graphicDb = pageEq30.getCombinedBandGain(i) * eqSend
             val peqDb = pageParam.calculateTotalGainAt(freq) * paramSend
             val fxDb = pageFx.calculateFxBoostAt(freq)
-            val combinedDb = (graphicDb + peqDb + fxDb).coerceIn(-15f, 15f)
+            
+            // Tahan frekuensi subsonik 20Hz-31.5Hz agar tidak berdengung
+            val subCut = when (i) {
+                0 -> -12f // 20 Hz
+                1 -> -8f  // 25 Hz
+                2 -> -4f  // 31.5 Hz
+                else -> 0f
+            }
+            val combinedDb = (graphicDb + peqDb + fxDb + subCut).coerceIn(-15f, 15f)
             try {
                 engine.setPostEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, freq, combinedDb))
             } catch (_: Exception) {}
@@ -318,14 +326,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun initDspEngine() {
         try {
+            // Gunakan VARIANT_FAVOR_TIME_RESOLUTION agar bass ketat (tight) dan bebas dengung/ringing
             val config = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 1,
-                true, preFreqs.size, true, preFreqs.size, true, eq30Freqs.size, true
+                DynamicsProcessing.VARIANT_FAVOR_TIME_RESOLUTION,
+                1,
+                true, preFreqs.size,
+                false, preFreqs.size, // MBC dimatikan default agar tidak mengangkat noise/dengung bass
+                true, eq30Freqs.size,
+                true
             ).build()
             dsp = DynamicsProcessing(0, 0, config).apply { enabled = true }
             updateLimiter()
-            syncMbcToDsp()
-            tvStatus?.text = "DSP STATUS: Stereo 30+30 • PEQ • FX • MBC • Console aktif"
+            
+            // Otomatis potong frekuensi subsonik 20Hz & 25Hz (-12dB) agar tidak dengung
+            dsp?.setPostEqBandAllChannelsTo(0, DynamicsProcessing.EqBand(true, 20f, -12f))
+            dsp?.setPostEqBandAllChannelsTo(1, DynamicsProcessing.EqBand(true, 25f, -8f))
+
+            tvStatus?.text = "DSP STATUS: Clean Bass Mode • Stereo 30+30 • PEQ • FX aktif"
             tvStatus?.setTextColor(Color.parseColor("#00E676"))
         } catch (e: Exception) {
             tvStatus?.text = "DSP INFO: Matikan Dolby/Mi Sound di Setelan HP (${e.javaClass.simpleName})"
